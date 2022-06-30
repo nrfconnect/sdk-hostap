@@ -199,6 +199,7 @@ int main(int argc, char *argv[])
 
 	wpa_supplicant_fd_workaround(1);
 
+#ifndef CONFIG_ZEPHYR //TODO: use shell_getopt in zephyr
 	for (;;) {
 		c = getopt(argc, argv,
 			   "b:Bc:C:D:de:f:g:G:hi:I:KLMm:No:O:p:P:qsTtuvW");
@@ -337,6 +338,7 @@ int main(int argc, char *argv[])
 			goto out;
 		}
 	}
+#endif
 
 	exitcode = 0;
 	global = wpa_supplicant_init(&params);

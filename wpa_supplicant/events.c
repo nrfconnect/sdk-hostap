@@ -2205,7 +2205,10 @@ static int _wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s,
 	    wpa_s->wpa_state < WPA_COMPLETED)
 		goto scan_work_done;
 
+#ifndef CONFIG_ZEPHYR
+	/* TODO : causing a crash */
 	wpa_scan_results_free(scan_res);
+#endif
 
 	if (own_request && wpa_s->scan_work) {
 		struct wpa_radio_work *work = wpa_s->scan_work;
