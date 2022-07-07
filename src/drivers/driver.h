@@ -6167,5 +6167,9 @@ extern const struct wpa_driver_ops wpa_driver_atheros_ops;
 #ifdef CONFIG_DRIVER_NONE
 extern const struct wpa_driver_ops wpa_driver_none_ops; /* driver_none.c */
 #endif /* CONFIG_DRIVER_NONE */
+#ifdef CONFIG_ZEPHYR
+extern const struct wpa_driver_ops wpa_driver_zep_ops; /* driver_zephyr.c */
+#endif /* CONFIG_ZEPHYR */
+
 
 #endif /* DRIVER_H */

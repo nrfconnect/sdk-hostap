@@ -35,7 +35,6 @@
 #include "wpa_ctrl.h"
 #include "common.h"
 
-
 #if defined(CONFIG_CTRL_IFACE_UNIX) || defined(CONFIG_CTRL_IFACE_UDP)
 #define CTRL_IFACE_SOCKET
 #endif /* CONFIG_CTRL_IFACE_UNIX || CONFIG_CTRL_IFACE_UDP */
