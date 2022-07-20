@@ -28,22 +28,20 @@ static void wpa_supp_drv_mbox_msg_handler(void *eloop_ctx,
 		   &mbox_msg_data,
 		   K_FOREVER);
 
-	mbox_msg_data.cb(mbox_msg_data.ctx,
-			 mbox_msg_data.data,
-			 0);
+	wpa_supplicant_event(mbox_msg_data.ctx, mbox_msg_data.event, mbox_msg_data.data);
 }
 
 
 void wpa_supp_event_handler(void *ctx,
-			    void *data,
-			    void *cb)
+			    unsigned int event,
+			    void *data)
 {
 	struct k_mbox_msg send_msg;
 	struct zep_wpa_supp_mbox_msg_data mbox_msg_data;
 
 	mbox_msg_data.ctx = ctx;
+	mbox_msg_data.event = event;
 	mbox_msg_data.data = data;
-	mbox_msg_data.cb = cb;
 
 	/* Prepare to send message */
 	send_msg.size = sizeof(mbox_msg_data);
@@ -113,9 +111,9 @@ void wpa_drv_zep_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 
 void wpa_drv_zep_event_proc_scan_start(struct zep_drv_if_ctx *if_ctx)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
-			     EVENT_SCAN_STARTED,
-			     NULL);
+	wpa_supp_event_handler(if_ctx->supp_if_ctx,
+			EVENT_SCAN_STARTED,
+			NULL);
 }
 
 
@@ -126,9 +124,9 @@ void wpa_drv_zep_event_proc_scan_done(struct zep_drv_if_ctx *if_ctx,
 			     if_ctx,
 			     if_ctx->supp_if_ctx);
 
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
-			     EVENT_SCAN_RESULTS,
-			     event);
+	wpa_supp_event_handler(if_ctx->supp_if_ctx,
+			EVENT_SCAN_RESULTS,
+			event);
 }
 
 
@@ -158,7 +156,7 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 void wpa_drv_zep_event_proc_auth_resp(struct zep_drv_if_ctx *if_ctx,
 				      union wpa_event_data *event)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
+	wpa_supp_event_handler(if_ctx->supp_if_ctx,
 			     EVENT_AUTH,
 			     event);
 }
@@ -169,9 +167,9 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 				       unsigned int status)
 {
 	if (status != WLAN_STATUS_SUCCESS) {
-		wpa_supplicant_event(if_ctx->supp_if_ctx,
-				     EVENT_ASSOC_REJECT,
-				     event);
+		wpa_supp_event_handler(if_ctx->supp_if_ctx,
+				EVENT_ASSOC_REJECT,
+				event);
 	} else {
 		if_ctx->associated = true;
 
@@ -179,9 +177,9 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 			  event->assoc_info.addr,
 			  ETH_ALEN);
 
-		wpa_supplicant_event(if_ctx->supp_if_ctx,
-				     EVENT_ASSOC,
-				     event);
+		wpa_supp_event_handler(if_ctx->supp_if_ctx,
+				EVENT_ASSOC,
+				event);
 	}
 }
 
@@ -189,18 +187,18 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 void wpa_drv_zep_event_proc_deauth(struct zep_drv_if_ctx *if_ctx,
 				   union wpa_event_data *event)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
-			     EVENT_DEAUTH,
-			     event);
+	wpa_supp_event_handler(if_ctx->supp_if_ctx,
+			EVENT_DEAUTH,
+			event);
 }
 
 
 void wpa_drv_zep_event_proc_disassoc(struct zep_drv_if_ctx *if_ctx,
 				     union wpa_event_data *event)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
-			     EVENT_DISASSOC,
-			     event);
+	wpa_supp_event_handler(if_ctx->supp_if_ctx,
+			EVENT_DISASSOC,
+			event);
 }
 
 

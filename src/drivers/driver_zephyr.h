@@ -15,10 +15,8 @@
 
 struct zep_wpa_supp_mbox_msg_data {
 	void *ctx;
+	unsigned int event;
 	void *data;
-	void (*cb)(void *ctx,
-		   void *data,
-		   int flags);
 };
 
 
@@ -100,6 +98,6 @@ struct zep_wpa_supp_dev_ops {
 
 
 void wpa_supp_event_handler(void *ctx,
-			    void *data,
-			    void *cb);
+			    unsigned int event,
+			    void *data);
 #endif /* DRIVER_ZEPHYR_H */
