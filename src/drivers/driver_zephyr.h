@@ -19,10 +19,8 @@ struct wpa_bss;
 
 struct zep_wpa_supp_mbox_msg_data {
 	void *ctx;
+	enum wpa_event_type event;
 	void *data;
-	void (*cb)(void *ctx,
-		   void *data,
-		   int flags);
 };
 
 
@@ -103,8 +101,4 @@ struct zep_wpa_supp_dev_ops {
 			     char *bssid);
 };
 
-
-void wpa_supp_event_handler(void *ctx,
-			    void *data,
-			    void *cb);
 #endif /* DRIVER_ZEPHYR_H */
