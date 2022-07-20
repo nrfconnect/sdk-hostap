@@ -137,6 +137,7 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 				     bool more_res)
 {
 	struct wpa_scan_res **tmp = NULL;
+	size_t scan_res_len  = sizeof(struct wpa_scan_res) + r->ie_len + r->beacon_ie_len;
 
 	tmp = os_realloc_array(if_ctx->scan_res2->res,
 			       if_ctx->scan_res2->num + 1,
@@ -148,7 +149,15 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 		goto err;
 	}
 
-	tmp[if_ctx->scan_res2->num++] = r;
+	struct wpa_scan_res *sr = os_zalloc(scan_res_len);
+	if (!sr) {
+		wpa_printf(MSG_ERROR, "%s: Failed to alloc scan results(%d bytes)\n", __func__, scan_res_len);
+		goto err;
+	}
+
+	os_memcpy(sr, r, scan_res_len);
+
+	tmp[if_ctx->scan_res2->num++] = sr;
 
 	if_ctx->scan_res2->res = tmp;
 
