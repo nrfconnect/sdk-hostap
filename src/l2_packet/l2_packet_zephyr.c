@@ -82,7 +82,7 @@ static void l2_packet_receive(int sock, void *eloop_ctx, void *sock_ctx)
 	int res;
 	struct sockaddr_ll ll;
 	socklen_t fromlen;
-	struct ieee802_1x_hdr *hdr;
+	const struct ieee802_1x_hdr *hdr;
 
 	os_memset(&ll, 0, sizeof(ll));
 	fromlen = sizeof(ll);
