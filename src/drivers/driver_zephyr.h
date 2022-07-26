@@ -97,7 +97,8 @@ struct zep_wpa_supp_dev_ops {
 };
 
 
-void wpa_supp_event_handler(void *ctx,
+void wpa_supplicant_event_mbox(void *ctx,
 			    unsigned int event,
-			    void *data);
+			    void *data,
+			    unsigned int data_len);
 #endif /* DRIVER_ZEPHYR_H */
