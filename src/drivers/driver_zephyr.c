@@ -652,6 +652,7 @@ static int wpa_drv_zep_set_key(void* priv,
 static int wpa_drv_zep_get_capa(void *priv,
 			       	struct wpa_driver_capa *capa)
 {
+	os_memset(capa, 0, sizeof(*capa));
 	/* Use SME */
 	capa->flags = 0;
 	capa->flags |= WPA_DRIVER_FLAGS_SME;
