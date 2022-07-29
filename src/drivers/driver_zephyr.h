@@ -69,7 +69,7 @@ struct zep_wpa_supp_dev_callbk_fns {
 
 struct zep_wpa_supp_dev_ops {
 	void *(*init)(void *supp_drv_if_ctx,
-		      const char *iface_name,
+		      const struct device *dev,
 		      struct zep_wpa_supp_dev_callbk_fns *callbk_fns);
 	void (*deinit)(void *if_priv);
 	int (*scan2)(void *if_priv,
