@@ -5,6 +5,8 @@
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
  */
+#include <zephyr/kernel.h>
+
 #include "includes.h"
 #include "utils/common.h"
 #include "eloop.h"
@@ -13,31 +15,45 @@
 K_MBOX_DEFINE(wpa_supp_mbox);
 #define SCAN_TIMEOUT 30
 
-static void wpa_supp_drv_mbox_msg_handler(void *eloop_ctx,
-					  void *timeout_ctx)
+static int wpa_supp_drv_mbox_msg_handler(void)
 {
 	struct k_mbox_msg msg;
 	struct zep_wpa_supp_mbox_msg_data mbox_msg_data;
 
-	/* Prepare to receive message */
-	msg.size = sizeof(mbox_msg_data);
-	msg.rx_source_thread = K_ANY;
+	while (1) {
+		/* Prepare to receive message */
+		msg.size = sizeof(mbox_msg_data);
+		msg.rx_source_thread = K_ANY;
 
-	k_mbox_get(&wpa_supp_mbox,
-		   &msg,
-		   &mbox_msg_data,
-		   K_FOREVER);
+		k_mbox_get(&wpa_supp_mbox,
+			&msg,
+			&mbox_msg_data,
+			K_FOREVER);
+		wpa_supplicant_event(mbox_msg_data.ctx,
+				mbox_msg_data.event,
+				mbox_msg_data.data);
 
-	wpa_supplicant_event(mbox_msg_data.ctx, mbox_msg_data.event, mbox_msg_data.data);
+		if (mbox_msg_data.data)
+			os_free(mbox_msg_data.data);
+	}
 
-	if (mbox_msg_data.data)
-		os_free(mbox_msg_data.data);
+	return 0;
 }
 
-void wpa_supplicant_event_mbox(void *ctx,
-			    unsigned int event,
+K_THREAD_DEFINE(drv_events_thread,
+			    2048,
+				wpa_supp_drv_mbox_msg_handler,
+				NULL,
+				NULL,
+				NULL,
+				0,
+				0,
+				-1);
+
+static void wpa_supplicant_event_mbox(void *ctx,
+			    enum wpa_event_type event,
 			    void *data,
-			    unsigned data_len)
+			    unsigned int data_len)
 {
 	struct k_mbox_msg send_msg;
 	struct zep_wpa_supp_mbox_msg_data mbox_msg_data;
@@ -60,12 +76,6 @@ void wpa_supplicant_event_mbox(void *ctx,
 	send_msg.tx_data = &mbox_msg_data;
 	send_msg.tx_block.data = NULL;
 	send_msg.tx_target_thread = K_ANY;
-
-	eloop_register_timeout(0,
-			       1, /* Minimal delay to terminate callstack */
-			       wpa_supp_drv_mbox_msg_handler,
-			       NULL,
-			       NULL);
 
 	k_mbox_put(&wpa_supp_mbox,
 		   &send_msg,
@@ -136,7 +146,6 @@ void wpa_drv_zep_event_proc_scan_done(struct zep_drv_if_ctx *if_ctx,
 			     if_ctx->supp_if_ctx);
 
 	if_ctx->scan_res2_get_in_prog = false;
-
 	wpa_supplicant_event_mbox(if_ctx->supp_if_ctx,
 			EVENT_SCAN_RESULTS,
 			event,
@@ -331,6 +340,8 @@ static void *wpa_drv_zep_init(void *ctx,
 		os_free(if_ctx);
 		if_ctx = NULL;
 		goto out;
+	} else {
+		k_thread_start(drv_events_thread);
 	}
 
 out:
