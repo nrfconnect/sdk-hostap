@@ -12,6 +12,9 @@
 #include <net/wifi_mgmt.h>
 #include <net/ethernet.h>
 #include "driver.h"
+#include "wpa_supplicant_i.h"
+#include "bss.h"
+struct wpa_bss;
 
 struct zep_wpa_supp_mbox_msg_data {
 	void *ctx;
@@ -78,7 +81,8 @@ struct zep_wpa_supp_dev_ops {
 			      const char *addr,
 			      unsigned short reason_code);
 	int (*authenticate)(void *if_priv,
-			    struct wpa_driver_auth_params *params);
+			    struct wpa_driver_auth_params *params,
+			    struct wpa_bss *curr_bss);
 	int (*associate)(void *if_priv,
 			 struct wpa_driver_associate_params *params);
 	int (*set_key)(void *if_priv,
