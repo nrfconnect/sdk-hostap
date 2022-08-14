@@ -484,6 +484,7 @@ static int wpa_drv_zep_authenticate(void *priv,
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	struct wpa_bss *curr_bss;
 	int ret = -1;
 
 	if ((!priv) || (!params)) {
@@ -501,8 +502,17 @@ static int wpa_drv_zep_authenticate(void *priv,
 	
 	if_ctx->ssid_len = params->ssid_len;
 
+	curr_bss = wpa_bss_get(if_ctx->supp_if_ctx, params->bssid, params->ssid, params->ssid_len);
+
+	if (!curr_bss) {
+		wpa_printf(MSG_ERROR, "%s: Failed to get BSS", __func__);
+		ret = -1;
+		goto out;
+	}
+
 	ret = dev_ops->authenticate(if_ctx->dev_priv,
-				    params);
+			    params,
+			    curr_bss);
 
 	if (ret) {
 		wpa_printf(MSG_ERROR, "%s: authenticate op failed\n", __func__);
