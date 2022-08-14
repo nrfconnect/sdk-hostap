@@ -25,7 +25,7 @@ LOG_MODULE_REGISTER(wpa_supplicant, LOG_LEVEL_DBG);
 #include "p2p_supplicant.h"
 #include "wpa_supplicant_i.h"
 
-struct wpa_supplicant *wpa_s_0;
+struct wpa_global *global;
 
 static void start_wpa_supplicant(void);
 
@@ -90,7 +90,6 @@ static void start_wpa_supplicant(void)
 	struct wpa_interface *ifaces, *iface;
 	int iface_count, exitcode = -1;
 	struct wpa_params params;
-	struct wpa_global *global;
 
 	os_memset(&params, 0, sizeof(params));
 	params.wpa_debug_level = CONFIG_WPA_SUPP_DEBUG_LEVEL;
@@ -157,9 +156,8 @@ static void start_wpa_supplicant(void)
 			exitcode = -1;
 			break;
 		}
-		wpa_s_0 = wpa_s;
-		wpa_s_0->conf->filter_ssids = 1;
-		wpa_s_0->conf->ap_scan= 1;
+		wpa_s->conf->filter_ssids = 1;
+		wpa_s->conf->ap_scan= 1;
 	}
 
 #ifdef CONFIG_MATCH_IFACE
