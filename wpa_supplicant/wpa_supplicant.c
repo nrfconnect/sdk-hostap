@@ -922,7 +922,7 @@ static void dhcp_war(struct wpa_supplicant *wpa_s)
        memset(buf, 0xAA, len);
 
        res = l2_packet_send(wpa_s->l2, wpa_s->bssid, ntohs(0x8989), buf, len);
-       wpa_printf(MSG_INFO, "DHCP WAR: TX frame res=%d", res);
+       wpa_printf(MSG_DEBUG, "DHCP WAR: TX frame res=%d", res);
        os_free(buf);
 }
 
