@@ -13,10 +13,12 @@
  */
 
 #include <logging/log.h>
+#include <sys/fcntl.h>
 LOG_MODULE_REGISTER(wpa_supplicant, LOG_LEVEL_DBG);
 
 #include "includes.h"
 #include "common.h"
+#include "eloop.h"
 #include "wpa_supplicant/config.h"
 #include "wpa_supplicant_i.h"
 #include "driver_i.h"
@@ -27,10 +29,12 @@ LOG_MODULE_REGISTER(wpa_supplicant, LOG_LEVEL_DBG);
 
 /* Should match with the driver name */
 #define DEFAULT_IFACE_NAME "wlan0"
+#define DUMMY_SOCKET_PORT 9999
 
 static struct net_mgmt_event_callback cb;
 struct k_mutex iface_up_mutex;
 struct wpa_global *global;
+static int dummy_socket = -1;
 
 static void start_wpa_supplicant(void);
 
@@ -176,6 +180,96 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	register_iface_events();
 }
 
+static void dummy_socket_handler(int sock, void *eloop_ctx, void *sock_ctx)
+{
+	ARG_UNUSED(sock);
+	ARG_UNUSED(eloop_ctx);
+	ARG_UNUSED(sock_ctx);
+	char buf[128] = {0};
+	int ret = recv(sock, buf, 128, 0);
+
+	wpa_printf(MSG_DEBUG, "%s: Got dummy message %d: %s", __func__, ret, buf);
+}
+
+static void set_nonblocking(int fd)
+{
+	int fl = fcntl(fd, F_GETFL, 0);
+	fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+}
+
+
+static int register_dummy_socket(void)
+{
+	struct sockaddr_in addr;
+	int ret;
+
+	dummy_socket = socket(PF_INET, SOCK_DGRAM, 0);
+
+	if (dummy_socket < 0) {
+		wpa_printf(MSG_ERROR, "Failed to initialize socket: %s", strerror(errno));
+		return -1;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_family = AF_INET;
+	addr.sin_port = DUMMY_SOCKET_PORT;
+
+	ret = bind(dummy_socket, (struct sockaddr *) &addr, sizeof(addr));
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "Failed to bind socket: %s", strerror(errno));
+		return -1;
+	}
+
+	/* We don't want to block other eloop handlers */
+	set_nonblocking(dummy_socket);
+
+	eloop_register_read_sock(dummy_socket, dummy_socket_handler, NULL, NULL);
+
+	return 0;
+}
+
+int set_dummy_socket_ready(void)
+{
+	const char * dummy_data = "dummy";
+	int ret;
+	unsigned int retry = 0;
+	struct sockaddr_in dst = {
+		.sin_addr = {
+			.s4_addr[0] = 127,
+			.s4_addr[1] = 0,
+			.s4_addr[2] = 0,
+			.s4_addr[3] = 2
+		 },
+		.sin_family = AF_INET,
+		.sin_port = DUMMY_SOCKET_PORT
+	};
+
+	if (dummy_socket < 0) {
+		return -1;
+	}
+
+retry_send:
+	ret = sendto(dummy_socket, dummy_data, strlen(dummy_data), 0, (struct sockaddr *)&dst, sizeof(dst));
+	if (ret < 0) {
+		if (errno == EINTR || errno == EAGAIN || errno == EBUSY || errno == EWOULDBLOCK) {
+			k_msleep(2);
+			if (retry++ < 3) {
+				goto retry_send;
+			} else {
+				wpa_printf(MSG_ERROR, "Failed to send on dummy socket (max retries): %s",
+						strerror(errno));
+				return -1;
+			}
+		} else {
+			wpa_printf(MSG_ERROR, "Failed to send on dummy socket: %s", strerror(errno));
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
 static void start_wpa_supplicant(void)
 {
 	int exitcode = -1;
@@ -212,6 +306,8 @@ static void start_wpa_supplicant(void)
 	net_if_foreach(iface_cb, NULL);
 	wait_for_interface_up(DEFAULT_IFACE_NAME);
 
+	register_dummy_socket();
+
 #ifdef CONFIG_MATCH_IFACE
 	if (exitcode == 0) {
 		exitcode = wpa_supplicant_init_match(global);
@@ -222,9 +318,15 @@ static void start_wpa_supplicant(void)
 		exitcode = wpa_supplicant_run(global);
 	}
 
+	eloop_unregister_read_sock(dummy_socket);
+
 	wpa_supplicant_deinit(global);
 
 	fst_global_deinit();
+
+	if (dummy_socket) {
+		close(dummy_socket);
+	}
 
 out:
 #ifdef CONFIG_MATCH_IFACE

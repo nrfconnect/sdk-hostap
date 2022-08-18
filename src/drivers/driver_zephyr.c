@@ -11,9 +11,20 @@
 #include "utils/common.h"
 #include "eloop.h"
 #include "driver_zephyr.h"
+#include "supp_main.h"
 
 K_MBOX_DEFINE(wpa_supp_mbox);
 #define SCAN_TIMEOUT 30
+
+void wpa_supplicant_event_wrapper(void *ctx,
+				enum wpa_event_type event,
+				union wpa_event_data *data)
+{
+
+	wpa_supplicant_event(ctx, event, data);
+
+	set_dummy_socket_ready();
+}
 
 static int wpa_supp_drv_mbox_msg_handler(void)
 {
@@ -29,7 +40,7 @@ static int wpa_supp_drv_mbox_msg_handler(void)
 			&msg,
 			&mbox_msg_data,
 			K_FOREVER);
-		wpa_supplicant_event(mbox_msg_data.ctx,
+		wpa_supplicant_event_wrapper(mbox_msg_data.ctx,
 				mbox_msg_data.event,
 				mbox_msg_data.data);
 
@@ -50,7 +61,7 @@ K_THREAD_DEFINE(drv_events_thread,
 				0,
 				-1);
 
-static void wpa_supplicant_event_mbox(void *ctx,
+static void wpa_supplicant_event_wrapper_mbox(void *ctx,
 			    enum wpa_event_type event,
 			    void *data,
 			    unsigned int data_len)
@@ -132,7 +143,7 @@ void wpa_drv_zep_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 
 void wpa_drv_zep_event_proc_scan_start(struct zep_drv_if_ctx *if_ctx)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_SCAN_STARTED,
 			NULL);
 }
@@ -146,7 +157,7 @@ void wpa_drv_zep_event_proc_scan_done(struct zep_drv_if_ctx *if_ctx,
 			     if_ctx->supp_if_ctx);
 
 	if_ctx->scan_res2_get_in_prog = false;
-	wpa_supplicant_event_mbox(if_ctx->supp_if_ctx,
+	wpa_supplicant_event_wrapper_mbox(if_ctx->supp_if_ctx,
 			EVENT_SCAN_RESULTS,
 			event,
 			sizeof(*event));
@@ -199,7 +210,7 @@ err:
 void wpa_drv_zep_event_proc_auth_resp(struct zep_drv_if_ctx *if_ctx,
 				      union wpa_event_data *event)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			     EVENT_AUTH,
 			     event);
 }
@@ -210,7 +221,7 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 				       unsigned int status)
 {
 	if (status != WLAN_STATUS_SUCCESS) {
-		wpa_supplicant_event(if_ctx->supp_if_ctx,
+		wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 				EVENT_ASSOC_REJECT,
 				event);
 	} else {
@@ -220,7 +231,7 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 			  event->assoc_info.addr,
 			  ETH_ALEN);
 
-		wpa_supplicant_event(if_ctx->supp_if_ctx,
+		wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 				EVENT_ASSOC,
 				event);
 	}
@@ -230,7 +241,7 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 void wpa_drv_zep_event_proc_deauth(struct zep_drv_if_ctx *if_ctx,
 				   union wpa_event_data *event)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_DEAUTH,
 			event);
 }
@@ -239,7 +250,7 @@ void wpa_drv_zep_event_proc_deauth(struct zep_drv_if_ctx *if_ctx,
 void wpa_drv_zep_event_proc_disassoc(struct zep_drv_if_ctx *if_ctx,
 				     union wpa_event_data *event)
 {
-	wpa_supplicant_event(if_ctx->supp_if_ctx,
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_DISASSOC,
 			event);
 }
@@ -276,7 +287,7 @@ static void wpa_drv_zep_global_deinit(void *priv)
 /**
  * wpa_driver_zep_init - Initialize Zephyr driver interface
  * @ctx: Context to be used when calling wpa_supplicant functions,
- *       e.g., wpa_supplicant_event()
+ *       e.g., wpa_supplicant_event_wrapper()
  * @ifname: Interface name, e.g., wlan0
  * @global_priv: private driver global data from global_init()
  *
