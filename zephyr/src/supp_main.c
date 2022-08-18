@@ -25,19 +25,24 @@ LOG_MODULE_REGISTER(wpa_supplicant, LOG_LEVEL_DBG);
 #include "p2p_supplicant.h"
 #include "wpa_supplicant_i.h"
 
+/* Should match with the driver name */
+#define DEFAULT_IFACE_NAME "wlan0"
+
+static struct net_mgmt_event_callback cb;
+struct k_mutex iface_up_mutex;
 struct wpa_global *global;
 
 static void start_wpa_supplicant(void);
 
 K_THREAD_DEFINE(wpa_s_tid,
-                CONFIG_WPA_SUPP_THREAD_STACK_SIZE,
-                start_wpa_supplicant,
-                NULL,
-                NULL,
-                NULL,
-                0,
-                0,
-                0);
+				CONFIG_WPA_SUPP_THREAD_STACK_SIZE,
+				start_wpa_supplicant,
+				NULL,
+				NULL,
+				NULL,
+				0,
+				0,
+				0);
 
 #ifdef CONFIG_MATCH_IFACE
 static int wpa_supplicant_init_match(struct wpa_global *global)
@@ -61,34 +66,119 @@ static int wpa_supplicant_init_match(struct wpa_global *global)
 #endif /* CONFIG_MATCH_IFACE */
 
 #include "config.h"
+
+int wpa_supplicant_get_iface_count(void)
+{
+	struct wpa_supplicant *wpa_s;
+	unsigned count = 0;
+
+	for (wpa_s = global->ifaces; wpa_s; wpa_s = wpa_s->next) {
+			count += 1;
+	}
+	return count;
+}
+
+static int wpas_add_interface(const char* ifname)
+{
+	struct wpa_supplicant *wpa_s;
+	struct wpa_interface *iface = NULL;
+
+	iface = os_zalloc(sizeof(struct wpa_interface));
+	if (iface == NULL) {
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO, "Adding interface %s\n", ifname);
+	iface->ifname = ifname;
+
+	wpa_s = wpa_supplicant_add_iface(global, iface, NULL);
+	if (wpa_s == NULL) {
+		wpa_printf(MSG_ERROR, "Failed to add iface: %s", ifname);
+		return -1;
+	}
+	wpa_s->conf->filter_ssids = 1;
+	wpa_s->conf->ap_scan= 1;
+
+	/* Default interface, kick start wpa_supplicant */
+	if (wpa_supplicant_get_iface_count() == 1) {
+		k_mutex_unlock(&iface_up_mutex);
+	}
+
+	return 0;
+}
+
+static int wpas_remove_interface(const char* ifname)
+{
+	int ret;
+	struct wpa_supplicant *wpa_s = wpa_supplicant_get_iface(global, ifname);
+
+	if (wpa_s == NULL) {
+		wpa_printf(MSG_ERROR, "Failed to fetch iface: %s", ifname);
+		return -1;
+	}
+	wpa_printf(MSG_INFO, "Remove interface %s\n", ifname);
+
+	/* wpa_supplicant thread never terminates unless there is some failure in
+	 * wpa_supplicant initialization
+	 */
+	ret = wpa_supplicant_remove_iface(global, wpa_s, 0);
+	if (!ret) {
+		wpa_printf(MSG_ERROR, "Failed to remove iface: %s, ret: %d", ifname, ret);
+	}
+
+	return ret;
+}
+
+static void iface_event_handler(struct net_mgmt_event_callback *cb,
+							uint32_t mgmt_event, struct net_if *iface)
+{
+	const char *ifname = iface->if_dev->dev->name;
+
+	wpa_printf(MSG_INFO, "Event: %d", mgmt_event);
+	if (mgmt_event == NET_EVENT_IF_UP) {
+		wpas_add_interface(ifname);
+	} else if (mgmt_event == NET_EVENT_IF_DOWN) {
+		wpas_remove_interface(ifname);
+	}
+}
+
+static void register_iface_events(void)
+{
+	k_mutex_init(&iface_up_mutex);
+
+	k_mutex_lock(&iface_up_mutex, K_FOREVER);
+	net_mgmt_init_event_callback(&cb, iface_event_handler,
+									NET_EVENT_IF_UP | NET_EVENT_IF_DOWN);
+	net_mgmt_add_event_callback(&cb);
+}
+
+static void wait_for_interface_up(const char* iface_name)
+{
+	if (wpa_supplicant_get_iface_count() == 0) {
+		k_mutex_lock(&iface_up_mutex, K_FOREVER);
+	}
+}
+
 static void iface_cb(struct net_if *iface, void *user_data)
 {
-	struct wpa_interface *ifaces = user_data;
-	struct net_linkaddr *link_addr = NULL;
-	int ifindex;
-	char own_addr[6];
-	char *ifname;
+	const char *ifname = iface->if_dev->dev->name;
 
-	ifindex = net_if_get_by_iface(iface);
-	link_addr = &iface->if_dev->link_addr;
-	os_memcpy(own_addr, link_addr->addr, link_addr->len);
-	ifname = os_strdup(iface->if_dev->dev->name);
+	if (strncmp(ifname, DEFAULT_IFACE_NAME, strlen(ifname)) != 0)
+	{
+		return;
+	}
 
-	wpa_printf(
-		MSG_INFO,
-		"iface_cb: iface %s ifindex %d %02x:%02x:%02x:%02x:%02x:%02x",
-		ifname, ifindex, own_addr[0], own_addr[1], own_addr[2],
-		own_addr[3], own_addr[4], own_addr[5]);
+	/* Check default interface */
+	if (net_if_flag_is_set(iface, NET_IF_UP)) {
+		wpas_add_interface(ifname);
+	} 
 
-	/* TODO : make this user configurable*/
-	ifaces[0].ifname = "wlan0";
+	register_iface_events();
 }
 
 static void start_wpa_supplicant(void)
 {
-	int i;
-	struct wpa_interface *ifaces, *iface;
-	int iface_count, exitcode = -1;
+	int exitcode = -1;
 	struct wpa_params params;
 
 	os_memset(&params, 0, sizeof(params));
@@ -96,12 +186,6 @@ static void start_wpa_supplicant(void)
 
 	wpa_printf(MSG_INFO, "%s: %d Starting wpa_supplicant thread with debug level: %d\n",
 		  __func__, __LINE__, params.wpa_debug_level);
-
-	iface = ifaces = os_zalloc(sizeof(struct wpa_interface));
-	if (ifaces == NULL) {
-		return;
-	}
-	iface_count = 1;
 
 	exitcode = 0;
 	global = wpa_supplicant_init(&params);
@@ -125,40 +209,8 @@ static void start_wpa_supplicant(void)
 		wpa_printf(MSG_WARNING, "Failed to add CLI FST ctrl");
 	}
 #endif
-
-	net_if_foreach(iface_cb, ifaces);
-
-	ifaces[0].ctrl_interface = "test_ctrl";
-	params.ctrl_interface = "test_ctrl";
-	wpa_printf(MSG_INFO, "Using interface %s\n", ifaces[0].ifname);
-
-	for (i = 0; exitcode == 0 && i < iface_count; i++) {
-		struct wpa_supplicant *wpa_s;
-
-		if ((ifaces[i].confname == NULL &&
-		     ifaces[i].ctrl_interface == NULL) ||
-		    ifaces[i].ifname == NULL) {
-			if (iface_count == 1 && (params.ctrl_interface ||
-#ifdef CONFIG_MATCH_IFACE
-						 params.match_iface_count ||
-#endif /* CONFIG_MATCH_IFACE */
-						 params.dbus_ctrl_interface))
-				break;
-			wpa_printf(MSG_INFO,
-				   "Failed to initialize interface %d\n", i);
-			exitcode = -1;
-			break;
-		}
-		wpa_printf(MSG_INFO, "Initializing interface %d: %s\n", i,
-			   ifaces[i].ifname);
-		wpa_s = wpa_supplicant_add_iface(global, &ifaces[i], NULL);
-		if (wpa_s == NULL) {
-			exitcode = -1;
-			break;
-		}
-		wpa_s->conf->filter_ssids = 1;
-		wpa_s->conf->ap_scan= 1;
-	}
+	net_if_foreach(iface_cb, NULL);
+	wait_for_interface_up(DEFAULT_IFACE_NAME);
 
 #ifdef CONFIG_MATCH_IFACE
 	if (exitcode == 0) {
@@ -175,7 +227,6 @@ static void start_wpa_supplicant(void)
 	fst_global_deinit();
 
 out:
-	os_free(ifaces);
 #ifdef CONFIG_MATCH_IFACE
 	os_free(params.match_ifaces);
 #endif /* CONFIG_MATCH_IFACE */
