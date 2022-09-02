@@ -99,6 +99,8 @@ struct zep_wpa_supp_dev_ops {
 	int (*set_supp_port)(void *if_priv,
 			     int authorized,
 			     char *bssid);
+	int (*signal_poll)(void *if_priv, struct wpa_signal_info *si,
+			   unsigned char *bssid);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
