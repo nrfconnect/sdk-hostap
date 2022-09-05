@@ -85,7 +85,7 @@ zephyr_library_sources(
 	${WPA_SUPPLICANT_BASE}/robust_av.c
 	${WPA_SUPPLICANT_BASE}/ctrl_iface.c
 	${WPA_SUPPLICANT_BASE}/ctrl_iface_udp.c
-	${WPA_SUPPLICANT_BASE}/wpa_cli.c	
+	${WPA_SUPPLICANT_BASE}/wpa_cli.c
 	# Zephyr main
 	src/supp_main.c
 	src/utils/wpa_debug.c
