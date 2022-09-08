@@ -5288,7 +5288,7 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 			os_get_reltime(&wpa_s->scan_start_time);
 			os_reltime_sub(&wpa_s->scan_start_time,
 				       &wpa_s->scan_trigger_time, &diff);
-			wpa_dbg(wpa_s, MSG_DEBUG, "Own scan request started a scan in %ld.%06ld seconds",
+			wpa_dbg(wpa_s, MSG_DEBUG, "Own scan request started a scan in %lld.%06lld seconds",
 				diff.sec, diff.usec);
 			wpa_s->own_scan_requested = 0;
 			wpa_s->own_scan_running = 1;
@@ -5324,7 +5324,7 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 			wpa_s->scan_start_time.sec = 0;
 			wpa_s->scan_start_time.usec = 0;
 			wpa_s->wps_scan_done = true;
-			wpa_dbg(wpa_s, MSG_DEBUG, "Scan completed in %ld.%06ld seconds",
+			wpa_dbg(wpa_s, MSG_DEBUG, "Scan completed in %lld.%06lld seconds",
 				diff.sec, diff.usec);
 		}
 		if (wpa_supplicant_event_scan_results(wpa_s, data))
