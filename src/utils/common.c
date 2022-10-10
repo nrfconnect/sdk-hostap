@@ -1304,7 +1304,7 @@ void forced_memzero(void *ptr, size_t len)
 }
 
 #ifdef CONFIG_ZEPHYR
-#include <net/net_ip.h>
+#include <zephyr/net/net_ip.h>
 extern char *inet_ntoa(struct in_addr in)
 {
 	char addr[NET_IPV4_ADDR_LEN];

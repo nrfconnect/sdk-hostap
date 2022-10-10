@@ -62,7 +62,7 @@
 #ifdef __NetBSD__
 #include <net/if_ether.h>
 #elif !defined(__CYGWIN__) && !defined(CONFIG_NATIVE_WINDOWS)
-#include <net/ethernet.h>
+#include <zephyr/net/ethernet.h>
 #endif
 
 static int wpa_supplicant_global_iface_list(struct wpa_global *global,

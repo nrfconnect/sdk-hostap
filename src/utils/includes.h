@@ -45,15 +45,15 @@
 
 #if defined(CONFIG_ZEPHYR)
 #if defined(CONFIG_POSIX_API)
-#include <posix/arpa/inet.h>
-#include <posix/sys/select.h>
-#include <posix/sys/socket.h>
-#include <posix/unistd.h>
+#include <zephyr/posix/arpa/inet.h>
+#include <zephyr/posix/sys/select.h>
+#include <zephyr/posix/sys/socket.h>
+#include <zephyr/posix/unistd.h>
 #else /* defined(CONFIG_POSIX_API) */
-#include <net/net_ip.h>
-#include <net/socket.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/socket.h>
 #endif /* defined(CONFIG_POSIX_API) */
-#include <shell/shell.h>
+#include <zephyr/shell/shell.h>
 #endif /* defined(CONFIG_ZEPHYR) */
 
 #endif /* INCLUDES_H */
