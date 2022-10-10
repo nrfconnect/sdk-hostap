@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
-#include "includes.h"
-#include <posix/time.h>
 #include <sys/time.h>
-#include <random/rand32.h>
+
+#include <zephyr/posix/time.h>
+#include <zephyr/random/rand32.h>
+
+#include "includes.h"
 #include "os.h"
 
 void os_sleep(os_time_t sec, os_time_t usec)
