@@ -4,22 +4,18 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
-#include "includes.h"
+#include <zephyr/kernel.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
 
+#include "includes.h"
 #include "common.h"
 #include "eloop.h"
 #include "l2_packet.h"
 #include "common/eapol_common.h"
-
-#include <zephyr.h>
-
-#include <linker/sections.h>
-#include <toolchain.h>
-
-#include <net/net_core.h>
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-
 struct l2_packet_data {
 	char ifname[17];
 	u8 own_addr[ETH_ALEN];

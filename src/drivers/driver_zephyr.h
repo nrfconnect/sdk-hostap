@@ -9,8 +9,9 @@
 #ifndef DRIVER_ZEPHYR_H
 #define DRIVER_ZEPHYR_H
 
-#include <net/wifi_mgmt.h>
-#include <net/ethernet.h>
+#include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/ethernet.h>
+
 #include "driver.h"
 #include "wpa_supplicant_i.h"
 #include "bss.h"
