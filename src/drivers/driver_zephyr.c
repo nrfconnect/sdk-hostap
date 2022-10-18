@@ -670,10 +670,6 @@ static int wpa_drv_zep_get_ssid(void *priv,
 
 	if_ctx = priv;
 
-	if (!if_ctx->ssid) {
-		return 0;
-	}
-
 	wpa_printf(MSG_INFO,
 		   "%s: SSID size: %d\n",
 		   __func__,
