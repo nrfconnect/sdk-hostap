@@ -66,6 +66,9 @@ struct zep_wpa_supp_dev_callbk_fns {
 
 	void (*disassoc)(struct zep_drv_if_ctx *if_ctx,
 			 union wpa_event_data *event);
+
+	void (*mgmt_tx_status)(struct zep_drv_if_ctx *if_ctx,
+			const u8 *frame, size_t len, bool ack);
 };
 
 
@@ -101,6 +104,12 @@ struct zep_wpa_supp_dev_ops {
 			     char *bssid);
 	int (*signal_poll)(void *if_priv, struct wpa_signal_info *si,
 			   unsigned char *bssid);
+	int (*send_mlme)(void *if_priv, const u8 *data,
+			size_t data_len, int noack,
+			unsigned int freq, int no_cck,
+			int offchanok,
+			unsigned int wait_time,
+			int cookie);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
