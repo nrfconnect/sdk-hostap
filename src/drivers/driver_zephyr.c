@@ -195,6 +195,30 @@ void wpa_drv_zep_event_proc_disassoc(struct zep_drv_if_ctx *if_ctx,
 			event);
 }
 
+static void wpa_drv_zep_event_mgmt_tx_status(struct zep_drv_if_ctx *if_ctx,
+		const u8 *frame, size_t len, bool ack)
+{
+	union wpa_event_data event;
+	const struct ieee80211_hdr *hdr;
+	u16 fc;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Frame TX status event");
+
+	hdr = (const struct ieee80211_hdr *) frame;
+	fc = le_to_host16(hdr->frame_control);
+
+	os_memset(&event, 0, sizeof(event));
+	event.tx_status.type = WLAN_FC_GET_TYPE(fc);
+	event.tx_status.stype = WLAN_FC_GET_STYPE(fc);
+	event.tx_status.dst = hdr->addr1;
+	event.tx_status.data = frame;
+	event.tx_status.data_len = len;
+	event.tx_status.ack = ack;
+
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
+			EVENT_TX_STATUS,
+			&event);
+}
 
 static void *wpa_drv_zep_global_init(void *ctx)
 {
@@ -282,6 +306,7 @@ static void *wpa_drv_zep_init(void *ctx,
 	callbk_fns.assoc_resp = wpa_drv_zep_event_proc_assoc_resp;
 	callbk_fns.deauth = wpa_drv_zep_event_proc_deauth;
 	callbk_fns.disassoc = wpa_drv_zep_event_proc_disassoc;
+	callbk_fns.mgmt_tx_status = wpa_drv_zep_event_mgmt_tx_status;
 
 	if_ctx->dev_priv = dev_ops->init(if_ctx,
 					 ifname,
@@ -643,6 +668,7 @@ static int wpa_drv_zep_get_capa(void *priv,
 	capa->flags = 0;
 	capa->flags |= WPA_DRIVER_FLAGS_SME;
 	capa->flags |= WPA_DRIVER_FLAGS_SAE;
+	capa->rrm_flags |= WPA_DRIVER_FLAGS_SUPPORT_RRM;
 
 	return 0;
 }
@@ -752,6 +778,42 @@ out:
 	return ret;
 }
 
+static int wpa_drv_zep_send_action(void *priv, unsigned int freq,
+		unsigned int wait_time,
+		const u8 *dst, const u8 *src,
+		const u8 *bssid,
+		const u8 *data, size_t data_len,
+		int no_cck)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+	u8 *buf;
+	struct ieee80211_hdr *hdr;
+
+	if_ctx = priv;
+	dev_ops = if_ctx->dev_ctx->config;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Send Action frame ("
+			"freq=%u MHz wait=%d ms no_cck=%d)",
+			freq, wait_time, no_cck);
+
+	buf = os_zalloc(24 + data_len);
+	if (buf == NULL)
+		return ret;
+	os_memcpy(buf + 24, data, data_len);
+	hdr = (struct ieee80211_hdr *)buf;
+	hdr->frame_control =
+		IEEE80211_FC(WLAN_FC_TYPE_MGMT, WLAN_FC_STYPE_ACTION);
+	os_memcpy(hdr->addr1, dst, ETH_ALEN);
+	os_memcpy(hdr->addr2, src, ETH_ALEN);
+	os_memcpy(hdr->addr3, bssid, ETH_ALEN);
+
+
+	return dev_ops->send_mlme(if_ctx->dev_priv, buf, 24 + data_len,
+			0, freq, no_cck, 1,
+			wait_time, 0);
+}
 
 const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.name = "zephyr",
@@ -772,4 +834,5 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.deauthenticate = wpa_drv_zep_deauthenticate,
 	.set_key = wpa_drv_zep_set_key,
 	.signal_poll = wpa_drv_zep_signal_poll,
+	.send_action = wpa_drv_zep_send_action,
 };
