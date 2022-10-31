@@ -182,7 +182,7 @@ int crypto_bignum_mulmod(
 
 	res = mbedtls_mpi_mod_mpi((mbedtls_mpi *)d, &temp, (mbedtls_mpi *)c);
 	mbedtls_mpi_free(&temp);
-#
+
 	return res ? -1 : 0;
 }
 
