@@ -69,6 +69,13 @@ struct zep_wpa_supp_dev_callbk_fns {
 
 	void (*mgmt_tx_status)(struct zep_drv_if_ctx *if_ctx,
 			const u8 *frame, size_t len, bool ack);
+
+	void (*unprot_deauth)(struct zep_drv_if_ctx *if_ctx,
+			      union wpa_event_data *event);
+
+	void (*unprot_disassoc)(struct zep_drv_if_ctx *if_ctx,
+				union wpa_event_data *event);
+
 };
 
 
