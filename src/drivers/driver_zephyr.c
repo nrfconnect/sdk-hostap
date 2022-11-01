@@ -210,6 +210,22 @@ static void wpa_drv_zep_event_mgmt_tx_status(struct zep_drv_if_ctx *if_ctx,
 			&event);
 }
 
+static void wpa_drv_zep_event_proc_unprot_deauth(struct zep_drv_if_ctx *if_ctx,
+						 union wpa_event_data *event)
+{
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
+			EVENT_UNPROT_DEAUTH,
+			event);
+}
+
+static void wpa_drv_zep_event_proc_unprot_disassoc(struct zep_drv_if_ctx *if_ctx,
+						   union wpa_event_data *event)
+{
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
+			EVENT_UNPROT_DISASSOC,
+			event);
+}
+
 static void *wpa_drv_zep_global_init(void *ctx)
 {
 	struct zep_drv_ctx *drv_ctx = NULL;
@@ -297,6 +313,8 @@ static void *wpa_drv_zep_init(void *ctx,
 	callbk_fns.deauth = wpa_drv_zep_event_proc_deauth;
 	callbk_fns.disassoc = wpa_drv_zep_event_proc_disassoc;
 	callbk_fns.mgmt_tx_status = wpa_drv_zep_event_mgmt_tx_status;
+	callbk_fns.unprot_deauth = wpa_drv_zep_event_proc_unprot_deauth;
+	callbk_fns.unprot_disassoc = wpa_drv_zep_event_proc_unprot_disassoc;
 
 	if_ctx->dev_priv = dev_ops->init(if_ctx,
 					 ifname,
