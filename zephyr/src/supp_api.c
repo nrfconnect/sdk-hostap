@@ -17,6 +17,10 @@
 #include "supp_main.h"
 #include "supp_api.h"
 
+#if defined(CONFIG_WIFI_CREDENTIALS)
+#include <net/wifi_credentials.h>
+#endif /* defined(CONFIG_WIFI_CREDENTIALS) */
+
 int cli_main(int, const char **);
 extern struct k_sem wpa_supplicant_ready_sem;
 extern struct wpa_global *global;
@@ -150,12 +154,177 @@ static inline void wpa_supp_restart_status_work(void)
 		K_MSEC(10));
 }
 
+static inline int wpa_supp_channel_to_freq(const struct wifi_connect_req_params *params,
+					   struct wpa_ssid *ssid)
+{
+	if (params->channel == WIFI_CHANNEL_ANY) {
+		return 0;
+	}
+
+	/* We use global channel list here and also use the widest
+	 * op_class for 5GHz channels as there is no user input
+	 * for these.
+	 */
+	int freq  = ieee80211_chan_to_freq(NULL, 81, params->channel);
+
+	if (freq <= 0) {
+		freq  = ieee80211_chan_to_freq(NULL, 128, params->channel);
+	}
+
+	if (freq <= 0) {
+		wpa_printf(MSG_ERROR, "Invalid channel %d", params->channel);
+		return -EINVAL;
+	}
+
+	ssid->scan_freq = os_zalloc(2 * sizeof(int));
+	if (!ssid->scan_freq) {
+		return -ENOMEM;
+	}
+	ssid->scan_freq[0] = freq;
+	ssid->scan_freq[1] = 0;
+
+	ssid->freq_list = os_zalloc(2 * sizeof(int));
+	if (!ssid->freq_list) {
+		os_free(ssid->scan_freq);
+		return -ENOMEM;
+	}
+	ssid->freq_list[0] = freq;
+	ssid->freq_list[1] = 0;
+	
+	return 0;
+}
+
+static inline int wpa_supp_copy_psk(const struct wifi_connect_req_params *params,
+				    struct wpa_ssid *ssid)
+{
+	if (!params->psk && !params->sae_password) {
+		return 0;
+	}
+	// TODO: Extend enum wifi_security_type
+	if (params->security == 3) {
+		ssid->key_mgmt = WPA_KEY_MGMT_SAE;
+		str_clear_free(ssid->sae_password);
+		ssid->sae_password = dup_binstr(params->sae_password, params->sae_password_length);
+
+		if (ssid->sae_password == NULL) {
+			wpa_printf(MSG_ERROR, "%s:Failed to copy sae_password\n",
+					__func__);
+			return -ENOMEM;
+		}
+	} else {
+		if (params->security == 2)
+			ssid->key_mgmt = WPA_KEY_MGMT_PSK_SHA256;
+		else
+			ssid->key_mgmt = WPA_KEY_MGMT_PSK;
+
+		str_clear_free(ssid->passphrase);
+		ssid->passphrase = dup_binstr(params->psk, params->psk_length);
+
+		if (ssid->passphrase == NULL) {
+			wpa_printf(MSG_ERROR, "%s:Failed to copy passphrase\n",
+			__func__);
+			return -ENOMEM;
+		}
+	}
+
+	wpa_config_update_psk(ssid);
+
+	return 0;
+}
+
+static inline int init_network(struct wpa_ssid *ssid,
+			       struct wpa_supplicant *wpa_s,
+			       const struct wifi_connect_req_params *params)
+{
+	int ret = 0;
+
+	if (ssid == NULL) {
+		return -EINVAL;
+	}
+
+	ssid->ssid = os_zalloc(sizeof(u8) * MAX_SSID_LEN);
+
+	if (ssid->ssid == NULL) {
+		return -ENOMEM;
+	}
+
+	memcpy(ssid->ssid, params->ssid, params->ssid_length);
+	ssid->ssid_len = params->ssid_length;
+	ssid->disabled = 1;
+	ssid->key_mgmt = WPA_KEY_MGMT_NONE;
+	ssid->ieee80211w = params->mfp;
+
+	ret = wpa_supp_channel_to_freq(params, ssid);
+	if (ret) {
+		return ret;
+	}
+	wpa_s->conf->filter_ssids = 1;
+	wpa_s->conf->ap_scan = 1;
+
+	ret = wpa_supp_copy_psk(params, ssid);
+	if (ret) {
+		return ret;
+	}
+	wpa_supplicant_enable_network(wpa_s, ssid);
+	return 0;
+}
+
+#if defined(CONFIG_WIFI_CREDENTIALS)
+
+static inline void convert_credentials_personal(struct wifi_credentials_personal *in,
+			 struct wifi_connect_req_params *out)
+{
+	out->ssid = in->header.ssid;
+	out->ssid_length = in->header.ssid_len;
+	out->security = in->header.type;
+	if (in->header.type == WIFI_SECURITY_TYPE_PSK ||
+	    in->header.type == WIFI_SECURITY_TYPE_PSK_SHA256) {
+		out->psk = in->password;
+		out->psk_length = in->password_len;
+	}
+	if (in->header.type == WIFI_SECURITY_TYPE_SAE) {
+		out->sae_password = in->password;
+		out->sae_password_length = in->password_len;
+	}
+	out->mfp = 1; /* management frame protection: optional */
+	out->channel = WIFI_CHANNEL_ANY;
+	out->band = 255; /* use any band */
+}
+
+void try_connect(void *cb_arg, const char *ssid, size_t ssid_len)
+{
+	int ret = 0;
+	struct wifi_connect_req_params params = { 0 };
+	struct wifi_credentials_personal creds = { 0 };
+	struct wpa_supplicant *wpa_s = cb_arg;
+	struct wpa_ssid *network = NULL;
+
+	ret = wifi_credentials_get_by_ssid_personal_struct(ssid, ssid_len, &creds);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s:Fetching WiFi credentials failed, rc: %d\n",
+					__func__, ret);
+		return;
+	}
+
+	convert_credentials_personal(&creds, &params);
+	network = wpa_supplicant_add_network(wpa_s);
+	ret = init_network(network, wpa_s, &params);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s:Initializing WiFi params failed, rc: %d\n",
+					__func__, ret);
+		return;
+	}
+}
+#endif /* defined(CONFIG_WIFI_CREDENTIALS) */
+
+
 
 int zephyr_supp_connect(const struct device *dev,
 						struct wifi_connect_req_params *params)
 {
 	struct wpa_ssid *ssid = NULL;
-	bool pmf = true;
 	struct wpa_supplicant *wpa_s;
 	int ret = 0;
 
@@ -168,96 +337,22 @@ int zephyr_supp_connect(const struct device *dev,
 
 	wpa_supplicant_remove_all_networks(wpa_s);
 
-	ssid = wpa_supplicant_add_network(wpa_s);
-	ssid->ssid = os_zalloc(sizeof(u8) * MAX_SSID_LEN);
-
-	memcpy(ssid->ssid, params->ssid, params->ssid_length);
-	ssid->ssid_len = params->ssid_length;
-	ssid->disabled = 1;
-	ssid->key_mgmt = WPA_KEY_MGMT_NONE;
-
-	if (params->channel != WIFI_CHANNEL_ANY) {
-		/* We use global channel list here and also use the widest
-		 * op_class for 5GHz channels as there is no user input
-		 * for these.
-		 */
-		int freq  = ieee80211_chan_to_freq(NULL, 81, params->channel);
-
-		if (freq <= 0) {
-			freq  = ieee80211_chan_to_freq(NULL, 128, params->channel);
-		}
-
-		if (freq <= 0) {
-			wpa_printf(MSG_ERROR, "Invalid channel %d", params->channel);
-			ret = -EINVAL;
+	if (params->ssid_length == 0) {
+#if defined(CONFIG_WIFI_CREDENTIALS)
+		wifi_credentials_for_each_ssid(try_connect, wpa_s);
+		wpas_request_connection(wpa_s);
+#else
+		ret = -EINVAL;
+		goto out;
+#endif /* defined(CONFIG_WIFI_CREDENTIALS) */
+	} else {
+		ssid = wpa_supplicant_add_network(wpa_s);
+		ret = init_network(ssid, wpa_s, params);
+		if (ret) {
 			goto out;
 		}
-
-		ssid->scan_freq = os_zalloc(2 * sizeof(int));
-		if (!ssid->scan_freq) {
-			ret = -ENOMEM;
-			goto out;
-		}
-		ssid->scan_freq[0] = freq;
-		ssid->scan_freq[1] = 0;
-
-		ssid->freq_list = os_zalloc(2 * sizeof(int));
-		if (!ssid->freq_list) {
-			os_free(ssid->scan_freq);
-			ret = -ENOMEM;
-			goto out;
-		}
-		ssid->freq_list[0] = freq;
-		ssid->freq_list[1] = 0;
+		wpa_supplicant_select_network(wpa_s, ssid);
 	}
-
-	wpa_s->conf->filter_ssids = 1;
-	wpa_s->conf->ap_scan = 1;
-
-	if (params->psk) {
-		// TODO: Extend enum wifi_security_type
-		if (params->security == 3) {
-			ssid->key_mgmt = WPA_KEY_MGMT_SAE;
-			str_clear_free(ssid->sae_password);
-			ssid->sae_password = dup_binstr(params->psk, params->psk_length);
-
-			if (ssid->sae_password == NULL) {
-				wpa_printf(MSG_ERROR, "%s:Failed to copy sae_password\n",
-					      __func__);
-				ret = -ENOMEM;
-				goto out;
-			}
-		} else {
-			if (params->security == 2)
-				ssid->key_mgmt = WPA_KEY_MGMT_PSK_SHA256;
-			else
-				ssid->key_mgmt = WPA_KEY_MGMT_PSK;
-
-			str_clear_free(ssid->passphrase);
-			ssid->passphrase = dup_binstr(params->psk, params->psk_length);
-
-			if (ssid->passphrase == NULL) {
-				wpa_printf(MSG_ERROR, "%s:Failed to copy passphrase\n",
-				__func__);
-				ret = -ENOMEM;
-				goto out;
-			}
-		}
-
-		wpa_config_update_psk(ssid);
-
-		if (pmf) {
-			/* 1-1 Mapping */
-			ssid->ieee80211w = params->mfp;
-		}
-
-	}
-
-	wpa_supplicant_enable_network(wpa_s,
-				      ssid);
-
-	wpa_supplicant_select_network(wpa_s,
-				      ssid);
 
 	send_wpa_supplicant_dummy_event();
 
