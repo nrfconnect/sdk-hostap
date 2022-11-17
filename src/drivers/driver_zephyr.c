@@ -12,6 +12,7 @@
 #include "eloop.h"
 #include "driver_zephyr.h"
 #include "supp_main.h"
+#include "common/ieee802_11_common.h"
 
 #define SCAN_TIMEOUT 30
 
@@ -192,7 +193,7 @@ static void wpa_drv_zep_event_mgmt_tx_status(struct zep_drv_if_ctx *if_ctx,
 	const struct ieee80211_hdr *hdr;
 	u16 fc;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Frame TX status event");
+	wpa_printf(MSG_DEBUG, "wpa_supp: Frame TX status event");
 
 	hdr = (const struct ieee80211_hdr *) frame;
 	fc = le_to_host16(hdr->frame_control);
@@ -224,6 +225,444 @@ static void wpa_drv_zep_event_proc_unprot_disassoc(struct zep_drv_if_ctx *if_ctx
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_UNPROT_DISASSOC,
 			event);
+}
+
+struct phy_info_arg {
+	u16 *num_modes;
+	struct hostapd_hw_modes *modes;
+	int last_mode, last_chan_idx;
+	int failed;
+	u8 dfs_domain;
+};
+
+static void phy_info_freq_cfg(struct hostapd_hw_modes *mode,
+		struct hostapd_channel_data *chan,
+		struct wpa_supp_event_channel *chnl_info)
+{
+	u8 channel = 0;
+
+	chan->freq = chnl_info->center_frequency;
+	chan->flag = 0;
+	chan->allowed_bw = ~0;
+	chan->dfs_cac_ms = 0;
+	
+	if (ieee80211_freq_to_chan(chan->freq, &channel) != NUM_HOSTAPD_MODES) {
+		chan->chan = channel;
+	}
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_DISABLED)
+		chan->flag |= HOSTAPD_CHAN_DISABLED;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_IR)
+		chan->flag |= HOSTAPD_CHAN_NO_IR;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_RADAR)
+		chan->flag |= HOSTAPD_CHAN_RADAR;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_INDOOR_ONLY)
+		chan->flag |= HOSTAPD_CHAN_INDOOR_ONLY;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_GO_CONCURRENT)
+		chan->flag |= HOSTAPD_CHAN_GO_CONCURRENT;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_10MHZ)
+		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_10;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_20MHZ)
+		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_20;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_HT40_PLUS)
+		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_40P;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_HT40_MINUS)
+		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_40M;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_80MHZ)
+		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_80;
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_160MHZ)
+		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_160;
+
+	if (chnl_info->wpa_supp_flags & WPA_SUPP_CHAN_DFS_CAC_TIME_VALID) {
+		chan->dfs_cac_ms = (chnl_info->wpa_supp_time);
+	}
+
+	/* Other elements are not present */
+	chan->wmm_rules_valid = 0;
+	chan->wmm_rules_valid = 0;
+}
+
+
+static int phy_info_freqs_cfg(struct phy_info_arg *phy_info,
+		struct hostapd_hw_modes *mode,
+		struct wpa_supp_event_supported_band *band_info)
+{
+	int new_channels = 0;
+	struct hostapd_channel_data *channel = NULL;
+	int idx;
+
+	if (!phy_info || !mode || !band_info)
+		return -1;
+
+	new_channels = band_info->wpa_supp_n_channels;
+	
+	if (!new_channels)
+		return 0;
+
+	channel = os_realloc_array(mode->channels,
+			mode->num_channels + new_channels,
+			sizeof(struct hostapd_channel_data));
+
+	if (!channel)
+		return -1;
+
+	mode->channels = channel;
+	mode->num_channels += new_channels;
+
+	idx = phy_info->last_chan_idx;
+
+	for (int i = 0; i < new_channels; i++) {
+		phy_info_freq_cfg(mode, &mode->channels[idx], &band_info->channels[i]);
+		idx++;
+	}
+
+	phy_info->last_chan_idx = idx;
+
+	return 0;
+}
+
+static int phy_info_rates_cfg(struct hostapd_hw_modes *mode,
+		struct wpa_supp_event_supported_band *band_info)
+{
+	int idx;
+
+	if (!mode || !band_info)
+		return -1;
+
+	mode->num_rates = band_info->wpa_supp_n_bitrates;
+
+	if (!mode->num_rates)
+		return 0;
+
+	mode->rates = os_calloc(mode->num_rates, sizeof(int));
+
+	if (!mode->rates)
+		return -1;
+
+	idx = 0;
+
+	for (int i = 0; i < mode->num_rates; i++) {
+		if (!band_info->bitrates[i].wpa_supp_bitrate)
+			continue;
+		mode->rates[idx] = band_info->bitrates[i].wpa_supp_bitrate;
+		idx++;
+	}
+
+	return 0;
+}
+
+
+
+static void phy_info_ht_capa_cfg(struct hostapd_hw_modes *mode, u16 capa,
+		u8 ampdu_factor,
+		u8 ampdu_density,
+		struct wpa_supp_event_mcs_info *mcs_set)
+{
+	if (capa)
+		mode->ht_capab = (capa);
+
+	if (ampdu_factor)
+		mode->a_mpdu_params |= (ampdu_factor) & WPA_SUPP_AMPDU_FACTOR_MASK;
+
+	if (ampdu_density)
+		mode->a_mpdu_params |= (ampdu_density) << WPA_SUPP_AMPDU_DENSITY_SHIFT;
+
+	if (mcs_set) {
+		os_memcpy(mode->mcs_set, mcs_set, sizeof(*mcs_set));
+	}
+
+}
+
+static void phy_info_vht_capa_cfg(struct hostapd_hw_modes *mode,
+		unsigned int capa,
+		struct wpa_supp_event_vht_mcs_info *vht_mcs_set)
+{
+	if (capa)
+		mode->vht_capab = (capa);
+
+	if (vht_mcs_set) {
+		os_memcpy(mode->vht_mcs_set, vht_mcs_set, 8);
+	}
+}
+
+static int phy_info_band_cfg(struct phy_info_arg *phy_info,
+		struct wpa_supp_event_supported_band *band_info)
+{
+	struct hostapd_hw_modes *mode;
+	int ret;
+
+	if (phy_info->last_mode != band_info->band) {
+		mode = os_realloc_array(phy_info->modes,
+				*phy_info->num_modes + 1,
+				sizeof(*mode));
+
+		if (!mode) {
+			phy_info->failed = 1;
+			return -1;
+		}
+
+		phy_info->modes = mode;
+
+		mode = &phy_info->modes[*(phy_info->num_modes)];
+
+		os_memset(mode, 0, sizeof(*mode));
+
+		mode->mode = NUM_HOSTAPD_MODES;
+		mode->flags = HOSTAPD_MODE_FLAG_HT_INFO_KNOWN |
+			HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN;
+
+		/*
+		 * Unsupported VHT MCS stream is defined as value 3, so the VHT
+		 * MCS RX/TX map must be initialized with 0xffff to mark all 8
+		 * possible streams as unsupported. This will be overridden if
+		 * driver advertises VHT support.
+		 */
+		mode->vht_mcs_set[0] = 0xff;
+		mode->vht_mcs_set[1] = 0xff;
+		mode->vht_mcs_set[4] = 0xff;
+		mode->vht_mcs_set[5] = 0xff;
+
+		*(phy_info->num_modes) += 1;
+
+		phy_info->last_mode = band_info->band;
+		phy_info->last_chan_idx = 0;
+	}
+	else
+		mode = &phy_info->modes[*(phy_info->num_modes) - 1];
+
+	phy_info_ht_capa_cfg(mode, band_info->ht_cap.wpa_supp_cap,
+			band_info->ht_cap.wpa_supp_ampdu_factor,
+			band_info->ht_cap.wpa_supp_ampdu_density,
+			&band_info->ht_cap.mcs);
+
+	phy_info_vht_capa_cfg(mode, band_info->vht_cap.wpa_supp_cap,
+			&band_info->vht_cap.vht_mcs);
+
+	ret = phy_info_freqs_cfg(phy_info, mode, band_info);
+
+	if (ret == 0)
+		ret = phy_info_rates_cfg(mode, band_info);
+
+	if (ret != 0) {
+		phy_info->failed = 1;
+		return ret;
+	}
+
+	return 0;
+}
+
+static void wpa_drv_zep_event_get_wiphy(struct zep_drv_if_ctx *if_ctx, void *band_info)
+{
+	if (!band_info) {
+		if_ctx->get_wiphy_in_progress = false;
+		return;
+	}
+
+	phy_info_band_cfg(if_ctx->phy_info_arg, band_info);
+}
+
+static int wpa_drv_register_frame(struct zep_drv_if_ctx *if_ctx,
+		u16 type, const u8 *match, size_t match_len,
+		bool multicast)
+{
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!dev_ops->register_frame)
+		return -1;
+
+	return dev_ops->register_frame(if_ctx->dev_priv, type, match, match_len, false);
+}
+
+static int wpa_drv_register_action_frame(struct zep_drv_if_ctx *if_ctx,
+		const u8 *match, size_t match_len)
+{
+	u16 type = (WLAN_FC_TYPE_MGMT << 2) | (WLAN_FC_STYPE_ACTION << 4);
+
+	return wpa_drv_register_frame(if_ctx, type, match, match_len, false);
+}
+
+static int wpa_drv_mgmt_subscribe_non_ap(struct zep_drv_if_ctx *if_ctx)
+{
+	int ret = 0;
+
+	/* WNM - BSS Transition Management Request */
+	if (wpa_drv_register_action_frame(if_ctx, (u8 *)"\x0a\x07", 2) < 0)
+		ret = -1;
+
+	return ret;
+}
+
+static void wpa_drv_zep_event_mgmt_rx(struct zep_drv_if_ctx *if_ctx,
+		char *frame, int frame_len,
+		int frequency, int rx_signal_dbm)
+{
+	const struct ieee80211_mgmt *mgmt;
+
+	union wpa_event_data event;
+	u16 fc, stype;
+	int rx_freq = 0;
+
+	wpa_printf(MSG_MSGDUMP, "wpa_supp: Frame event");
+	mgmt = (const struct ieee80211_mgmt *)frame;
+
+	if (frame_len < 24) {
+		wpa_printf(MSG_DEBUG, "wpa_supp: Too short management frame");
+		return;
+	}
+
+	fc = le_to_host16(mgmt->frame_control);
+	stype = WLAN_FC_GET_STYPE(fc);
+
+	os_memset(&event, 0, sizeof(event));
+
+	if (frequency) {
+		event.rx_mgmt.freq = frequency;
+		rx_freq = event.rx_mgmt.freq;
+	}
+
+	event.rx_mgmt.frame = frame;
+	event.rx_mgmt.frame_len = frame_len;
+	event.rx_mgmt.ssi_signal = rx_signal_dbm;
+
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx, EVENT_RX_MGMT, &event);
+}
+
+static struct hostapd_hw_modes *
+wpa_driver_wpa_supp_postprocess_modes(struct hostapd_hw_modes *modes,
+		u16 *num_modes)
+{
+	u16 m;
+	struct hostapd_hw_modes *mode11g = NULL, *nmodes, *mode;
+	int i, mode11g_idx = -1;
+
+	/* heuristic to set up modes */
+	for (m = 0; m < *num_modes; m++) {
+		if (!modes[m].num_channels)
+			continue;
+		if (modes[m].channels[0].freq < 4000) {
+			modes[m].mode = HOSTAPD_MODE_IEEE80211B;
+			for (i = 0; i < modes[m].num_rates; i++) {
+				if (modes[m].rates[i] > 200) {
+					modes[m].mode = HOSTAPD_MODE_IEEE80211G;
+					break;
+				}
+			}
+		} else if (modes[m].channels[0].freq > 50000)
+			modes[m].mode = HOSTAPD_MODE_IEEE80211AD;
+		else
+			modes[m].mode = HOSTAPD_MODE_IEEE80211A;
+	}
+
+	/* If only 802.11g mode is included, use it to construct matching
+	 * 802.11b mode data. */
+
+	for (m = 0; m < *num_modes; m++) {
+		if (modes[m].mode == HOSTAPD_MODE_IEEE80211B)
+			return modes; /* 802.11b already included */
+		if (modes[m].mode == HOSTAPD_MODE_IEEE80211G)
+			mode11g_idx = m;
+	}
+
+	if (mode11g_idx < 0)
+		return modes; /* 2.4 GHz band not supported at all */
+
+	nmodes = os_realloc_array(modes, *num_modes + 1, sizeof(*nmodes));
+	if (nmodes == NULL)
+		return modes; /* Could not add 802.11b mode */
+
+	mode = &nmodes[*num_modes];
+	os_memset(mode, 0, sizeof(*mode));
+	(*num_modes)++;
+	modes = nmodes;
+
+	mode->mode = HOSTAPD_MODE_IEEE80211B;
+	mode11g = &modes[mode11g_idx];
+	mode->num_channels = mode11g->num_channels;
+	mode->channels = os_memdup(mode11g->channels,
+			mode11g->num_channels *
+			sizeof(struct hostapd_channel_data));
+	if (mode->channels == NULL) {
+		(*num_modes)--;
+		return modes; /* Could not add 802.11b mode */
+	}
+
+	mode->num_rates = 0;
+	mode->rates = os_malloc(4 * sizeof(int));
+	if (mode->rates == NULL) {
+		os_free(mode->channels);
+		(*num_modes)--;
+		return modes; /* Could not add 802.11b mode */
+	}
+
+	for (i = 0; i < mode11g->num_rates; i++) {
+		if (mode11g->rates[i] != 10 && mode11g->rates[i] != 20 &&
+				mode11g->rates[i] != 55 && mode11g->rates[i] != 110)
+			continue;
+		mode->rates[mode->num_rates] = mode11g->rates[i];
+		mode->num_rates++;
+		if (mode->num_rates == 4)
+			break;
+	}
+
+	if (mode->num_rates == 0) {
+		os_free(mode->channels);
+		os_free(mode->rates);
+		(*num_modes)--;
+		return modes; /* No 802.11b rates */
+	}
+
+	wpa_printf(MSG_DEBUG, "wpa_supp: Added 802.11b mode based on 802.11g "
+			"information");
+
+	return modes;
+}
+
+struct hostapd_hw_modes *wpa_drv_get_hw_feature_data(void *priv,
+		u16 *num_modes,
+		u16 *flags, u8 *dfs_domain)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+	int i=0;
+
+	if_ctx = priv;
+
+	dev_ops = if_ctx->dev_ctx->config;
+
+	struct phy_info_arg result = {
+		.num_modes = num_modes,
+		.modes = NULL,
+		.last_mode = -1,
+		.failed = 0,
+		.dfs_domain = 0,
+	};
+
+	*num_modes = 0;
+	*flags = 0;
+	*dfs_domain = 0;
+
+	if_ctx->phy_info_arg = &result;
+
+	if_ctx->get_wiphy_in_progress = true;
+
+	ret = dev_ops->get_wiphy(if_ctx->dev_priv);
+
+	while ((if_ctx->get_wiphy_in_progress) && (i < SCAN_TIMEOUT)) {
+		k_yield();
+		os_sleep(1, 0);
+		i++;
+	}
+
+	struct hostapd_hw_modes *modes;
+
+	*dfs_domain = result.dfs_domain;
+
+	modes = wpa_driver_wpa_supp_postprocess_modes(result.modes,
+			num_modes);
+
+	return modes;
 }
 
 static void *wpa_drv_zep_global_init(void *ctx)
@@ -315,6 +754,8 @@ static void *wpa_drv_zep_init(void *ctx,
 	callbk_fns.mgmt_tx_status = wpa_drv_zep_event_mgmt_tx_status;
 	callbk_fns.unprot_deauth = wpa_drv_zep_event_proc_unprot_deauth;
 	callbk_fns.unprot_disassoc = wpa_drv_zep_event_proc_unprot_disassoc;
+	callbk_fns.get_wiphy_res = wpa_drv_zep_event_get_wiphy;
+	callbk_fns.mgmt_rx = wpa_drv_zep_event_mgmt_rx;
 
 	if_ctx->dev_priv = dev_ops->init(if_ctx,
 					 ifname,
@@ -328,6 +769,8 @@ static void *wpa_drv_zep_init(void *ctx,
 		if_ctx = NULL;
 		goto out;
 	}
+
+	wpa_drv_mgmt_subscribe_non_ap(if_ctx);
 
 out:
 	return if_ctx;
@@ -801,7 +1244,7 @@ static int wpa_drv_zep_send_action(void *priv, unsigned int freq,
 	if_ctx = priv;
 	dev_ops = if_ctx->dev_ctx->config;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Send Action frame ("
+	wpa_printf(MSG_DEBUG, "wpa_supp: Send Action frame ("
 			"freq=%u MHz wait=%d ms no_cck=%d)",
 			freq, wait_time, no_cck);
 
@@ -821,6 +1264,8 @@ static int wpa_drv_zep_send_action(void *priv, unsigned int freq,
 			0, freq, no_cck, 1,
 			wait_time, 0);
 }
+
+
 
 const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.name = "zephyr",
@@ -842,4 +1287,5 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.set_key = wpa_drv_zep_set_key,
 	.signal_poll = wpa_drv_zep_signal_poll,
 	.send_action = wpa_drv_zep_send_action,
+	.get_hw_feature_data = wpa_drv_get_hw_feature_data,
 };

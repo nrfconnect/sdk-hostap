@@ -15,6 +15,84 @@
 #include "driver.h"
 #include "wpa_supplicant_i.h"
 #include "bss.h"
+
+#define __WPA_SUPP_PKD __attribute__((__packed__))
+
+struct wpa_supp_event_channel {
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_IR (1 << 0)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_IBSS (1 << 1)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_RADAR (1 << 2)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_HT40_MINUS (1 << 3)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_HT40_PLUS (1 << 4)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_80MHZ (1 << 5)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_160MHZ (1 << 6)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_INDOOR_ONLY (1 << 7)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_GO_CONCURRENT (1 << 8)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_20MHZ (1 << 9)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_ATTR_NO_10MHZ (1 << 10)
+#define WPA_SUPP_CHAN_FLAG_FREQUENCY_DISABLED (1 << 11)
+
+#define WPA_SUPP_CHAN_DFS_VALID (1 << 12)
+#define WPA_SUPP_CHAN_DFS_CAC_TIME_VALID (1 << 13)
+	unsigned short wpa_supp_flags;
+	signed int wpa_supp_max_power;
+	unsigned int wpa_supp_time;
+	unsigned int dfs_cac_msec;
+	signed char ch_valid;
+	unsigned short center_frequency;
+	signed char dfs_state;
+} __WPA_SUPP_PKD;
+
+struct wpa_supp_event_rate {
+#define WPA_SUPP_EVENT_GET_WIPHY_FLAG_RATE_SHORT_PREAMBLE (1 << 0)
+	unsigned short wpa_supp_flags;
+	unsigned short wpa_supp_bitrate;
+} __WPA_SUPP_PKD;
+
+struct wpa_supp_event_mcs_info {
+#define WPA_SUPP_HT_MCS_MASK_LEN 10
+#define WPA_SUPP_HT_MCS_RES_LEN 3
+	unsigned short wpa_supp_rx_highest;
+	unsigned char wpa_supp_rx_mask[WPA_SUPP_HT_MCS_MASK_LEN];
+	unsigned char wpa_supp_tx_params;
+	unsigned char wpa_supp_reserved[WPA_SUPP_HT_MCS_RES_LEN];
+} __WPA_SUPP_PKD;
+
+struct wpa_supp_event_sta_ht_cap {
+	signed int wpa_supp_ht_supported;
+	unsigned short wpa_supp_cap;
+	struct wpa_supp_event_mcs_info mcs;
+#define WPA_SUPP_AMPDU_FACTOR_MASK 0x03
+#define WPA_SUPP_AMPDU_DENSITY_SHIFT 2
+	unsigned char wpa_supp_ampdu_factor;
+	unsigned char wpa_supp_ampdu_density;
+} __WPA_SUPP_PKD;
+
+struct wpa_supp_event_vht_mcs_info {
+	unsigned short rx_mcs_map;
+	unsigned short rx_highest;
+	unsigned short tx_mcs_map;
+	unsigned short tx_highest;
+} __WPA_SUPP_PKD;
+
+struct wpa_supp_event_sta_vht_cap {
+	signed char wpa_supp_vht_supported;
+	unsigned int wpa_supp_cap;
+	struct wpa_supp_event_vht_mcs_info vht_mcs;
+} __WPA_SUPP_PKD;
+
+struct wpa_supp_event_supported_band {
+	unsigned short wpa_supp_n_channels;
+	unsigned short wpa_supp_n_bitrates;
+#define WPA_SUPP_SBAND_MAX_CHANNELS 29
+#define WPA_SUPP_SBAND_MAX_RATES 13
+	struct wpa_supp_event_channel channels[WPA_SUPP_SBAND_MAX_CHANNELS];
+	struct wpa_supp_event_rate bitrates[WPA_SUPP_SBAND_MAX_RATES];
+	struct wpa_supp_event_sta_ht_cap ht_cap;
+	struct wpa_supp_event_sta_vht_cap vht_cap;
+	signed char band;
+} __WPA_SUPP_PKD;
+
 struct wpa_bss;
 
 struct zep_wpa_supp_mbox_msg_data {
@@ -43,6 +121,9 @@ struct zep_drv_if_ctx {
 	size_t ssid_len;
 	unsigned char bssid[6];
 	bool associated;
+
+	void *phy_info_arg;
+	bool get_wiphy_in_progress;
 };
 
 
@@ -76,6 +157,11 @@ struct zep_wpa_supp_dev_callbk_fns {
 	void (*unprot_disassoc)(struct zep_drv_if_ctx *if_ctx,
 				union wpa_event_data *event);
 
+	void (*get_wiphy_res)(struct zep_drv_if_ctx *if_ctx,
+				void *band);
+
+	void (*mgmt_rx)(struct zep_drv_if_ctx *if_ctx,
+			char *frame, int frame_len, int frequency, int rx_signal_dbm);
 };
 
 
@@ -117,6 +203,11 @@ struct zep_wpa_supp_dev_ops {
 			int offchanok,
 			unsigned int wait_time,
 			int cookie);
+	int (*get_wiphy)(void *if_priv);
+
+	int (*register_frame)(void *if_priv,
+			u16 type, const u8 *match, size_t match_len,
+			bool multicast);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
