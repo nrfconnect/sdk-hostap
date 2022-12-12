@@ -255,7 +255,7 @@ static void phy_info_freq_cfg(struct hostapd_hw_modes *mode,
 	chan->flag = 0;
 	chan->allowed_bw = ~0;
 	chan->dfs_cac_ms = 0;
-	
+
 	if (ieee80211_freq_to_chan(chan->freq, &channel) != NUM_HOSTAPD_MODES) {
 		chan->chan = channel;
 	}
@@ -304,7 +304,7 @@ static int phy_info_freqs_cfg(struct phy_info_arg *phy_info,
 		return -1;
 
 	new_channels = band_info->wpa_supp_n_channels;
-	
+
 	if (!new_channels)
 		return 0;
 
@@ -987,7 +987,7 @@ static int wpa_drv_zep_authenticate(void *priv,
 	os_memcpy(if_ctx->ssid,
 		  params->ssid,
 		  params->ssid_len);
-	
+
 	if_ctx->ssid_len = params->ssid_len;
 
 	curr_bss = wpa_bss_get(if_ctx->supp_if_ctx, params->bssid, params->ssid, params->ssid_len);
@@ -1071,7 +1071,7 @@ static int _wpa_drv_zep_set_key(void *priv,
 	}
 
 	if_ctx = priv;
-	dev_ops = if_ctx->dev_ctx->config;	
+	dev_ops = if_ctx->dev_ctx->config;
 
 	wpa_printf(MSG_DEBUG, "%s: priv:%p alg %d addr %p key_idx %d set_tx %d seq %p "
 		   "seq_len %d key %p key_len %d\n",
