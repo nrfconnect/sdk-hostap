@@ -1114,13 +1114,35 @@ static int wpa_drv_zep_set_key(void* priv,
 static int wpa_drv_zep_get_capa(void *priv,
 			       	struct wpa_driver_capa *capa)
 {
-	/* Use SME */
-	capa->flags = 0;
-	capa->flags |= WPA_DRIVER_FLAGS_SME;
-	capa->flags |= WPA_DRIVER_FLAGS_SAE;
-	capa->rrm_flags |= WPA_DRIVER_FLAGS_SUPPORT_RRM;
 
-	return 0;
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+
+	if ((!priv) || (!capa)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!dev_ops->get_capa) {
+		wpa_printf(MSG_ERROR, "%s: get_capa op not supported\n", __func__);
+		goto out;
+	}
+
+	ret = dev_ops->get_capa(if_ctx->dev_priv,
+				capa);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: get_capa op failed\n", __func__);
+		goto out;
+	}
+
+	ret = 0;
+out:
+	return ret;
 }
 
 
