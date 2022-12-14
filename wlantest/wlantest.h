@@ -55,6 +55,8 @@ struct wlantest_sta {
 	struct dl_list list;
 	struct wlantest_bss *bss;
 	u8 addr[ETH_ALEN];
+	u8 mld_mac_addr[ETH_ALEN];
+	u8 link_addr[MAX_NUM_MLO_LINKS][ETH_ALEN];
 	enum {
 		STATE1 /* not authenticated */,
 		STATE2 /* authenticated */,
@@ -114,6 +116,8 @@ struct wlantest_sta {
 
 	u32 tx_tid[16 + 1];
 	u32 rx_tid[16 + 1];
+
+	u16 sae_group;
 };
 
 struct wlantest_tdls {
@@ -136,6 +140,7 @@ struct wlantest_tdls {
 struct wlantest_bss {
 	struct dl_list list;
 	u8 bssid[ETH_ALEN];
+	u8 mld_mac_addr[ETH_ALEN];
 	u16 capab_info;
 	u16 prev_capab_info;
 	u8 ssid[32];
@@ -295,24 +300,32 @@ void pmk_deinit(struct wlantest_pmk *pmk);
 void tdls_deinit(struct wlantest_tdls *tdls);
 
 struct wlantest_sta * sta_find(struct wlantest_bss *bss, const u8 *addr);
+struct wlantest_sta * sta_find_mlo(struct wlantest *wt,
+				   struct wlantest_bss *bss, const u8 *addr);
 struct wlantest_sta * sta_get(struct wlantest_bss *bss, const u8 *addr);
 void sta_deinit(struct wlantest_sta *sta);
 void sta_update_assoc(struct wlantest_sta *sta,
 		      struct ieee802_11_elems *elems);
+void sta_new_ptk(struct wlantest *wt, struct wlantest_sta *sta,
+		 struct wpa_ptk *ptk);
 
 u8 * ccmp_decrypt(const u8 *tk, const struct ieee80211_hdr *hdr,
-		  const u8 *data, size_t data_len, size_t *decrypted_len);
-u8 * ccmp_encrypt(const u8 *tk, u8 *frame, size_t len, size_t hdrlen, u8 *qos,
-		  u8 *pn, int keyid, size_t *encrypted_len);
+		  const u8 *a1, const u8 *a2, const u8 *data, size_t data_len,
+		  size_t *decrypted_len);
+u8 * ccmp_encrypt(const u8 *tk, u8 *frame, size_t len, size_t hdrlen,
+		  const u8 *qos, const u8 *a1, const u8 *a2, const u8 *pn,
+		  int keyid, size_t *encrypted_len);
 u8 * ccmp_encrypt_pv1(const u8 *tk, const u8 *a1, const u8 *a2, const u8 *a3,
 		      const u8 *frame, size_t len,
 		      size_t hdrlen, const u8 *pn, int keyid,
 		      size_t *encrypted_len);
 void ccmp_get_pn(u8 *pn, const u8 *data);
 u8 * ccmp_256_decrypt(const u8 *tk, const struct ieee80211_hdr *hdr,
+		      const u8 *a1, const u8 *a2,
 		      const u8 *data, size_t data_len, size_t *decrypted_len);
 u8 * ccmp_256_encrypt(const u8 *tk, u8 *frame, size_t len, size_t hdrlen,
-		      u8 *qos, u8 *pn, int keyid, size_t *encrypted_len);
+		      const u8 *qos, const u8 *a1, const u8 *a2, const u8 *pn,
+		      int keyid, size_t *encrypted_len);
 
 enum michael_mic_result {
 	MICHAEL_MIC_OK,
@@ -335,9 +348,10 @@ u8 * bip_gmac_protect(const u8 *igtk, size_t igtk_len, u8 *frame, size_t len,
 		      u8 *ipn, int keyid, size_t *prot_len);
 
 u8 * gcmp_decrypt(const u8 *tk, size_t tk_len, const struct ieee80211_hdr *hdr,
-		  const u8 *data, size_t data_len, size_t *decrypted_len);
+		  const u8 *a1, const u8 *a2, const u8 *data, size_t data_len,
+		  size_t *decrypted_len);
 u8 * gcmp_encrypt(const u8 *tk, size_t tk_len, const u8 *frame, size_t len,
-		  size_t hdrlen, const u8 *qos,
+		  size_t hdrlen, const u8 *qos, const u8 *a1, const u8 *a2,
 		  const u8 *pn, int keyid, size_t *encrypted_len);
 
 int ctrl_init(struct wlantest *wt);

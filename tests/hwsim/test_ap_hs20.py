@@ -530,7 +530,8 @@ def test_ap_hs20_select(dev, apdev):
                                  'domain': "example.org"})
     interworking_select(dev[0], bssid2, "home", freq="2412")
 
-def hs20_simulated_sim(dev, ap, method):
+def hs20_simulated_sim(dev, ap, method, imsi_privacy=False,
+                       imsi_privacy_attr=False):
     bssid = ap['bssid']
     params = hs20_ap_params()
     params['hessid'] = bssid
@@ -539,8 +540,14 @@ def hs20_simulated_sim(dev, ap, method):
     hostapd.add_ap(ap, params)
 
     dev.hs20_enable()
-    dev.add_cred_values({'imsi': "555444-333222111", 'eap': method,
-                         'milenage': "5122250214c33e723a5dd523fc145fc0:981d464c7c52eb6e5036234984ad0bcf:000000000123"})
+    params = {'imsi': "555444-333222111", 'eap': method,
+              'milenage': "5122250214c33e723a5dd523fc145fc0:981d464c7c52eb6e5036234984ad0bcf:000000000123"}
+    if imsi_privacy:
+        check_imsi_privacy_support(dev)
+        params['imsi_privacy_cert'] = "auth_serv/imsi-privacy-cert.pem"
+        if imsi_privacy_attr:
+            params['imsi_privacy_attr'] = "Identifier=1234567"
+    dev.add_cred_values(params)
     interworking_select(dev, bssid, "home", freq="2412")
     interworking_connect(dev, bssid, method)
     check_sp_type(dev, "home")
@@ -553,6 +560,11 @@ def test_ap_hs20_sim(dev, apdev):
     ev = dev[0].wait_event(["INTERWORKING-ALREADY-CONNECTED"], timeout=15)
     if ev is None:
         raise Exception("Timeout on already-connected event")
+
+def test_ap_hs20_sim_imsi_privacy(dev, apdev):
+    """Hotspot 2.0 with simulated SIM and EAP-SIM with IMSI privacy"""
+    hlr_auc_gw_available()
+    hs20_simulated_sim(dev[0], apdev[0], "SIM", imsi_privacy=True)
 
 def test_ap_hs20_sim_invalid(dev, apdev):
     """Hotspot 2.0 with simulated SIM and EAP-SIM - invalid IMSI"""
@@ -599,10 +611,26 @@ def test_ap_hs20_aka(dev, apdev):
     hlr_auc_gw_available()
     hs20_simulated_sim(dev[0], apdev[0], "AKA")
 
+def test_ap_hs20_aka_imsi_privacy(dev, apdev):
+    """Hotspot 2.0 with simulated USIM and EAP-AKA with IMSI privacy"""
+    hlr_auc_gw_available()
+    hs20_simulated_sim(dev[0], apdev[0], "AKA", imsi_privacy=True)
+
+def test_ap_hs20_aka_imsi_privacy_attr(dev, apdev):
+    """Hotspot 2.0 with simulated USIM and EAP-AKA with IMSI privacy/attr"""
+    hlr_auc_gw_available()
+    hs20_simulated_sim(dev[0], apdev[0], "AKA", imsi_privacy=True,
+                       imsi_privacy_attr=True)
+
 def test_ap_hs20_aka_prime(dev, apdev):
     """Hotspot 2.0 with simulated USIM and EAP-AKA'"""
     hlr_auc_gw_available()
     hs20_simulated_sim(dev[0], apdev[0], "AKA'")
+
+def test_ap_hs20_aka_prime_imsi_privacy(dev, apdev):
+    """Hotspot 2.0 with simulated USIM and EAP-AKA with IMSI privacy'"""
+    hlr_auc_gw_available()
+    hs20_simulated_sim(dev[0], apdev[0], "AKA'", imsi_privacy=True)
 
 def test_ap_hs20_ext_sim(dev, apdev):
     """Hotspot 2.0 with external SIM processing"""
@@ -1073,6 +1101,32 @@ def test_ap_hs20_roaming_consortium(dev, apdev):
             raise Exception("Timeout on already-connected event")
         dev[0].remove_cred(id)
 
+def test_ap_hs20_home_ois(dev, apdev):
+    """Hotspot 2.0 connection based on roaming consortium match"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].flush_scan_cache()
+    dev[0].hs20_enable()
+    for consortium in [["112233"], ["1020304050"], ["010203040506"], ["fedcba"],
+                       ["f12233", "f020304050", "f10203040506", "fedcba"]]:
+        id = dev[0].add_cred_values({'username': "user",
+                                     'password': "password",
+                                     'domain': "example.com",
+                                     'ca_cert': "auth_serv/ca.pem",
+                                     'home_ois': consortium,
+                                     'eap': "PEAP"})
+        interworking_select(dev[0], bssid, "home", freq="2412")
+        interworking_connect(dev[0], bssid, "PEAP")
+        check_sp_type(dev[0], "home")
+        dev[0].request("INTERWORKING_SELECT auto freq=2412")
+        ev = dev[0].wait_event(["INTERWORKING-ALREADY-CONNECTED"], timeout=15)
+        if ev is None:
+            raise Exception("Timeout on already-connected event")
+        dev[0].remove_cred(id)
+
 def test_ap_hs20_roaming_consortiums_match(dev, apdev):
     """Hotspot 2.0 connection based on roaming_consortiums match"""
     bssid = apdev[0]['bssid']
@@ -1131,7 +1185,7 @@ def test_ap_hs20_roaming_consortium_invalid(dev, apdev):
                                  'password': "password",
                                  'domain': "example.com",
                                  'ca_cert': "auth_serv/ca.pem",
-                                 'roaming_consortium': "fedcba",
+                                 'home_ois': ["fedcba"],
                                  'eap': "PEAP"})
     interworking_select(dev[0], bssid, "home", freq="2412", no_match=True)
 
@@ -1150,7 +1204,7 @@ def test_ap_hs20_roaming_consortium_element(dev, apdev):
                                  'password': "password",
                                  'domain': "example.com",
                                  'ca_cert': "auth_serv/ca.pem",
-                                 'roaming_consortium': "112233",
+                                 'home_ois': ["112233"],
                                  'eap': "PEAP"})
     interworking_select(dev[0], bssid, freq="2412", no_match=True)
 
@@ -1175,10 +1229,10 @@ def test_ap_hs20_roaming_consortium_constraints(dev, apdev):
             'password': "password",
             'domain': "example.com",
             'ca_cert': "auth_serv/ca.pem",
-            'roaming_consortium': "fedcba",
+            'home_ois': ["fedcba"],
             'eap': "TTLS"}
     vals2 = vals.copy()
-    vals2['required_roaming_consortium'] = "223344"
+    vals2['required_home_ois'] = ["223344"]
     id = dev[0].add_cred_values(vals2)
     interworking_select(dev[0], bssid, "home", freq="2412", no_match=True)
     dev[0].remove_cred(id)
@@ -1219,16 +1273,16 @@ def test_ap_hs20_roaming_consortium_constraints(dev, apdev):
     dev[0].remove_cred(id)
 
     values = default_cred()
-    values['roaming_consortium'] = "fedcba"
+    values['home_ois'] = ["fedcba"]
     id3 = dev[0].add_cred_values(values)
 
     vals2 = vals.copy()
-    vals2['roaming_consortium'] = "fedcba"
+    vals2['home_ois'] = ["fedcba"]
     vals2['priority'] = "2"
     id = dev[0].add_cred_values(vals2)
 
     values = default_cred()
-    values['roaming_consortium'] = "fedcba"
+    values['home_ois'] = ["fedcba"]
     id2 = dev[0].add_cred_values(values)
 
     dev[0].request("INTERWORKING_SELECT freq=2412")
@@ -1255,7 +1309,7 @@ def test_ap_hs20_3gpp_constraints(dev, apdev):
             'eap': "SIM",
             'milenage': "5122250214c33e723a5dd523fc145fc0:981d464c7c52eb6e5036234984ad0bcf:000000000123"}
     vals2 = vals.copy()
-    vals2['required_roaming_consortium'] = "223344"
+    vals2['required_home_ois'] = ["223344"]
     id = dev[0].add_cred_values(vals2)
     interworking_select(dev[0], bssid, "home", freq="2412", no_match=True)
     dev[0].remove_cred(id)
@@ -1283,16 +1337,16 @@ def test_ap_hs20_3gpp_constraints(dev, apdev):
     dev[0].remove_cred(id)
 
     values = default_cred()
-    values['roaming_consortium'] = "fedcba"
+    values['home_ois'] = ["fedcba"]
     id3 = dev[0].add_cred_values(values)
 
     vals2 = vals.copy()
-    vals2['roaming_consortium'] = "fedcba"
+    vals2['home_ois'] = ["fedcba"]
     vals2['priority'] = "2"
     id = dev[0].add_cred_values(vals2)
 
     values = default_cred()
-    values['roaming_consortium'] = "fedcba"
+    values['home_ois'] = ["fedcba"]
     id2 = dev[0].add_cred_values(values)
 
     dev[0].request("INTERWORKING_SELECT freq=2412")
@@ -1335,7 +1389,7 @@ def test_ap_hs20_connect_no_full_match(dev, apdev):
             'password': "password",
             'domain': "example.com",
             'ca_cert': "auth_serv/ca.pem",
-            'roaming_consortium': "fedcba",
+            'home_ois': ["fedcba"],
             'eap': "TTLS",
             'min_dl_bandwidth_home': "65500"}
     id = dev[0].add_cred_values(vals)
@@ -1749,7 +1803,7 @@ def test_ap_hs20_prefer_home(dev, apdev):
     values['domain'] = "example.org"
     policy_test(dev[0], apdev[0], values, only_one=False)
 
-def test_ap_hs20_req_roaming_consortium(dev, apdev):
+def test_ap_hs20_req_home_ois(dev, apdev):
     """Hotspot 2.0 required roaming consortium"""
     check_eap_capa(dev[0], "MSCHAPV2")
     params = hs20_ap_params()
@@ -1761,18 +1815,19 @@ def test_ap_hs20_req_roaming_consortium(dev, apdev):
     hostapd.add_ap(apdev[1], params)
 
     values = default_cred()
-    values['required_roaming_consortium'] = "223344"
+    values['required_home_ois'] = ["223344"]
     policy_test(dev[0], apdev[1], values)
-    values['required_roaming_consortium'] = "112233"
+    values['required_home_ois'] = ["112233"]
     policy_test(dev[0], apdev[0], values)
 
     id = dev[0].add_cred()
-    dev[0].set_cred(id, "required_roaming_consortium", "112233")
-    dev[0].set_cred(id, "required_roaming_consortium", "112233445566778899aabbccddeeff")
+    dev[0].set_cred_quoted(id, "required_home_ois", "112233")
+    dev[0].set_cred_quoted(id, "required_home_ois",
+                           "112233445566778899aabbccddeeff")
 
     for val in ["", "1", "11", "1122", "1122334",
-                "112233445566778899aabbccddeeff00"]:
-        if "FAIL" not in dev[0].request('SET_CRED {} required_roaming_consortium {}'.format(id, val)):
+                "112233445566778899aabbccddeeff00", "1122334455,12345"]:
+        if "FAIL" not in dev[0].request('SET_CRED {} required_home_ois "{}"'.format(id, val)):
             raise Exception("Invalid roaming consortium value accepted: " + val)
 
 def test_ap_hs20_req_roaming_consortium_no_match(dev, apdev):
@@ -1788,7 +1843,7 @@ def test_ap_hs20_req_roaming_consortium_no_match(dev, apdev):
     hostapd.add_ap(apdev[1], params)
 
     values = default_cred()
-    values['required_roaming_consortium'] = "223344"
+    values['required_home_ois'] = ["223344"]
     dev[0].hs20_enable()
     id = dev[0].add_cred_values(values)
     dev[0].request("INTERWORKING_SELECT auto freq=2412")
@@ -1823,7 +1878,7 @@ def test_ap_hs20_excluded_ssid(dev, apdev):
         raise Exception("Excluded network not reported")
 
     values = default_cred()
-    values['roaming_consortium'] = "223344"
+    values['home_ois'] = ["223344"]
     values['eap'] = "TTLS"
     values['phase2'] = "auth=MSCHAPV2"
     values['excluded_ssid'] = "test-hs20"
@@ -2559,7 +2614,15 @@ def test_ap_hs20_deauth_req_from_radius(dev, apdev):
     finally:
         dev[0].request("SET pmf 0")
 
-def _test_ap_hs20_deauth_req_from_radius(dev, apdev):
+def test_ap_hs20_deauth_req_from_radius_url(dev, apdev):
+    """Hotspot 2.0 connection and deauthentication request from RADIUS with URL"""
+    check_eap_capa(dev[0], "MSCHAPV2")
+    try:
+        _test_ap_hs20_deauth_req_from_radius(dev, apdev, url=True)
+    finally:
+        dev[0].set("pmf", "0")
+
+def _test_ap_hs20_deauth_req_from_radius(dev, apdev, url=False):
     bssid = apdev[0]['bssid']
     params = hs20_ap_params()
     params['nai_realm'] = ["0,example.com,21[2:4]"]
@@ -2568,17 +2631,20 @@ def _test_ap_hs20_deauth_req_from_radius(dev, apdev):
 
     dev[0].request("SET pmf 2")
     dev[0].hs20_enable()
+    user = "hs20-deauth-test-url" if url else "hs20-deauth-test"
     dev[0].add_cred_values({'realm': "example.com",
-                            'username': "hs20-deauth-test",
+                            'username': user,
                             'password': "password"})
     interworking_select(dev[0], bssid, freq="2412")
     interworking_connect(dev[0], bssid, "TTLS")
     ev = dev[0].wait_event(["HS20-DEAUTH-IMMINENT-NOTICE"], timeout=5)
     if ev is None:
         raise Exception("Timeout on deauth imminent notice")
-    if " 1 100" not in ev:
-        raise Exception("Unexpected deauth imminent contents")
-    dev[0].wait_disconnected(timeout=3)
+    if not url and ev.split(' ', 1)[1] != "1 100 ":
+        raise Exception("Unexpected deauth imminent contents: " + ev)
+    if url and ev.split(' ', 1)[1] != "0 0 https://example.com/deauth/":
+        raise Exception("Unexpected deauth imminent contents: " + ev)
+    dev[0].wait_disconnected(timeout=3 if url else 1)
 
 def test_ap_hs20_deauth_req_without_pmf(dev, apdev):
     """Hotspot 2.0 connection and deauthentication request without PMF"""
@@ -5510,7 +5576,7 @@ def test_ap_hs20_cred_with_nai_realm(dev, apdev):
                                  'username': "test",
                                  'password': "secret",
                                  'domain': "example.com",
-                                 'roaming_consortium': "112234",
+                                 'home_ois': ["112234"],
                                  'eap': 'TTLS'})
     interworking_select(dev[0], bssid, "home", freq=2412, no_match=True)
     dev[0].remove_cred(id)
@@ -5529,7 +5595,7 @@ def test_ap_hs20_cred_and_no_roaming_consortium(dev, apdev):
                                  'username': "test",
                                  'password': "secret",
                                  'domain': "example.com",
-                                 'roaming_consortium': "112234",
+                                 'home_ois': ["112234"],
                                  'eap': 'TTLS'})
     interworking_select(dev[0], bssid, "home", freq=2412)
 
@@ -5605,7 +5671,7 @@ def test_ap_hs20_no_rsn_connect(dev, apdev):
                                  'username': "test",
                                  'password': "secret",
                                  'domain': "example.com",
-                                 'roaming_consortium': "112233",
+                                 'home_ois': ["112233"],
                                  'eap': 'TTLS'})
 
     interworking_select(dev[0], bssid, freq=2412, no_match=True)
@@ -5625,7 +5691,7 @@ def test_ap_hs20_no_match_connect(dev, apdev):
                                  'username': "test",
                                  'password': "secret",
                                  'domain': "example.org",
-                                 'roaming_consortium': "112234",
+                                 'home_ois': ["112234"],
                                  'eap': 'TTLS'})
 
     interworking_select(dev[0], bssid, freq=2412, no_match=True)
@@ -5682,7 +5748,7 @@ def test_ap_hs20_anqp_invalid_gas_response(dev, apdev):
                                  'username': "test",
                                  'password': "secret",
                                  'domain': "example.com",
-                                 'roaming_consortium': "112234",
+                                 'home_ois': ["112234"],
                                  'eap': 'TTLS'})
     dev[0].request("INTERWORKING_SELECT freq=2412")
 
@@ -5855,7 +5921,7 @@ def test_ap_hs20_set_profile_failures(dev, apdev):
         wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
     dev[0].remove_cred(id)
 
-    id = dev[0].add_cred_values({'roaming_consortium': "112233",
+    id = dev[0].add_cred_values({'home_ois': ["112233"],
                                  'domain': "example.com",
                                  'username': "hs20-test",
                                  'password': "password",
@@ -5877,7 +5943,7 @@ def test_ap_hs20_set_profile_failures(dev, apdev):
     dev[0].remove_cred(id)
     dev[0].wait_disconnected()
 
-    id = dev[0].add_cred_values({'roaming_consortium': "112233",
+    id = dev[0].add_cred_values({'home_ois': ["112233"],
                                  'domain': "example.com",
                                  'realm': "example.com",
                                  'username': "user",
@@ -5895,7 +5961,7 @@ def test_ap_hs20_set_profile_failures(dev, apdev):
         wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
     dev[0].remove_cred(id)
 
-    id = dev[0].add_cred_values({'roaming_consortium': "112233",
+    id = dev[0].add_cred_values({'home_ois': ["112233"],
                                  'domain': "example.com",
                                  'realm': "example.com",
                                  'username': "user",
@@ -5919,7 +5985,7 @@ def test_ap_hs20_set_profile_failures(dev, apdev):
         wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
     dev[0].remove_cred(id)
 
-    id = dev[0].add_cred_values({'roaming_consortium': "112233",
+    id = dev[0].add_cred_values({'home_ois': ["112233"],
                                  'domain': "example.com",
                                  'realm': "example.com",
                                  'username': "user",
@@ -5993,7 +6059,7 @@ def test_ap_hs20_set_profile_failures(dev, apdev):
             wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
     dev[0].remove_cred(id)
 
-    id = dev[0].add_cred_values({'roaming_consortium': "112233",
+    id = dev[0].add_cred_values({'home_ois': ["112233"],
                                  'eap': 'TTLS',
                                  'username': "user@example.com",
                                  'password': "password"})

@@ -28,6 +28,48 @@ struct wlantest_sta * sta_find(struct wlantest_bss *bss, const u8 *addr)
 }
 
 
+struct wlantest_sta * sta_find_mlo(struct wlantest *wt,
+				   struct wlantest_bss *bss, const u8 *addr)
+{
+	struct wlantest_sta *sta;
+	struct wlantest_bss *obss;
+	int link_id;
+
+	dl_list_for_each(sta, &bss->sta, struct wlantest_sta, list) {
+		if (os_memcmp(sta->addr, addr, ETH_ALEN) == 0)
+			return sta;
+	}
+
+	if (is_zero_ether_addr(addr))
+		return NULL;
+
+	dl_list_for_each(sta, &bss->sta, struct wlantest_sta, list) {
+		for (link_id = 0; link_id < MAX_NUM_MLO_LINKS; link_id++) {
+			if (os_memcmp(sta->link_addr[link_id], addr,
+				      ETH_ALEN) == 0)
+				return sta;
+		}
+	}
+
+	dl_list_for_each(obss, &wt->bss, struct wlantest_bss, list) {
+		if (obss == bss)
+			continue;
+		dl_list_for_each(sta, &obss->sta, struct wlantest_sta, list) {
+			if (os_memcmp(sta->addr, addr, ETH_ALEN) == 0)
+				return sta;
+			for (link_id = 0; link_id < MAX_NUM_MLO_LINKS;
+			     link_id++) {
+				if (os_memcmp(sta->link_addr[link_id], addr,
+					      ETH_ALEN) == 0)
+					return sta;
+			}
+		}
+	}
+
+	return NULL;
+}
+
+
 struct wlantest_sta * sta_get(struct wlantest_bss *bss, const u8 *addr)
 {
 	struct wlantest_sta *sta;
@@ -229,4 +271,63 @@ skip_rsn_wpa:
 		   sta->rsn_capab & WPA_CAPABILITY_OCVC ? "OCVC " : "",
 		   sta->rsn_capab & WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST ?
 		   "ExtKeyID " : "");
+}
+
+
+static void sta_copy_ptk(struct wlantest_sta *sta, struct wpa_ptk *ptk)
+{
+	os_memcpy(&sta->ptk, ptk, sizeof(*ptk));
+	sta->ptk_set = 1;
+	os_memset(sta->rsc_tods, 0, sizeof(sta->rsc_tods));
+	os_memset(sta->rsc_fromds, 0, sizeof(sta->rsc_fromds));
+}
+
+
+void sta_new_ptk(struct wlantest *wt, struct wlantest_sta *sta,
+		 struct wpa_ptk *ptk)
+{
+	struct wlantest_bss *bss;
+	struct wlantest_sta *osta;
+
+	add_note(wt, MSG_DEBUG, "Derived new PTK");
+	sta_copy_ptk(sta, ptk);
+	wpa_hexdump(MSG_DEBUG, "PTK:KCK", sta->ptk.kck, sta->ptk.kck_len);
+	wpa_hexdump(MSG_DEBUG, "PTK:KEK", sta->ptk.kek, sta->ptk.kek_len);
+	wpa_hexdump(MSG_DEBUG, "PTK:TK", sta->ptk.tk, sta->ptk.tk_len);
+
+	dl_list_for_each(bss, &wt->bss, struct wlantest_bss, list) {
+		dl_list_for_each(osta, &bss->sta, struct wlantest_sta, list) {
+			bool match = false;
+			int link_id;
+
+			if (osta == sta)
+				continue;
+			if (os_memcmp(sta->addr, osta->addr, ETH_ALEN) == 0)
+				match = true;
+			for (link_id = 0; !match && link_id < MAX_NUM_MLO_LINKS;
+			     link_id++) {
+				if (os_memcmp(osta->link_addr[link_id],
+					      sta->addr, ETH_ALEN) == 0)
+					match = true;
+			}
+
+			if (!match)
+				continue;
+			wpa_printf(MSG_DEBUG,
+				   "Add PTK to another MLO STA entry " MACSTR
+				   " (MLD " MACSTR " --> " MACSTR ") in BSS "
+				   MACSTR " (MLD " MACSTR " --> " MACSTR ")",
+				   MAC2STR(osta->addr),
+				   MAC2STR(osta->mld_mac_addr),
+				   MAC2STR(sta->mld_mac_addr),
+				   MAC2STR(bss->bssid),
+				   MAC2STR(bss->mld_mac_addr),
+				   MAC2STR(sta->bss->mld_mac_addr));
+			sta_copy_ptk(osta, ptk);
+			os_memcpy(osta->mld_mac_addr, sta->mld_mac_addr,
+				  ETH_ALEN);
+			os_memcpy(osta->bss->mld_mac_addr,
+				  sta->bss->mld_mac_addr, ETH_ALEN);
+		}
+	}
 }

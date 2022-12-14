@@ -66,6 +66,7 @@ enum hostapd_chan_width_attr {
 	HOSTAPD_CHAN_WIDTH_40M  = BIT(3),
 	HOSTAPD_CHAN_WIDTH_80   = BIT(4),
 	HOSTAPD_CHAN_WIDTH_160  = BIT(5),
+	HOSTAPD_CHAN_WIDTH_320  = BIT(6),
 };
 
 /* Filter gratuitous ARP */
@@ -200,6 +201,15 @@ struct he_capabilities {
 	u16 he_6ghz_capa;
 };
 
+/* struct eht_capabilities - IEEE 802.11be EHT capabilities */
+struct eht_capabilities {
+	bool eht_supported;
+	u16 mac_cap;
+	u8 phy_cap[EHT_PHY_CAPAB_LEN];
+	u8 mcs[EHT_MCS_NSS_CAPAB_LEN];
+	u8 ppet[EHT_PPE_THRESH_CAPAB_LEN];
+};
+
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
 #define HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN BIT(1)
 
@@ -298,6 +308,11 @@ struct hostapd_hw_modes {
 	 * for IEEE 802.11ay EDMG configuration.
 	 */
 	struct ieee80211_edmg_config edmg;
+
+	/**
+	 * eht_capab - EHT (IEEE 802.11be) capabilities
+	 */
+	struct eht_capabilities eht_capab[IEEE80211_MODE_NUM];
 };
 
 
@@ -338,6 +353,7 @@ struct hostapd_hw_modes {
  * @parent_tsf: Time when the Beacon/Probe Response frame was received in terms
  * of TSF of the BSS specified by %tsf_bssid.
  * @tsf_bssid: The BSS that %parent_tsf TSF time refers to.
+ * @beacon_newer: Whether the Beacon frame data is known to be newer
  * @ie_len: length of the following IE field in octets
  * @beacon_ie_len: length of the following Beacon IE field in octets
  *
@@ -370,6 +386,7 @@ struct wpa_scan_res {
 	int snr;
 	u64 parent_tsf;
 	u8 tsf_bssid[ETH_ALEN];
+	bool beacon_newer;
 	size_t ie_len;
 	size_t beacon_ie_len;
 	/* Followed by ie_len + beacon_ie_len octets of IE data */
@@ -651,6 +668,16 @@ struct wpa_driver_scan_params {
 	 */
 	unsigned int p2p_include_6ghz:1;
 
+	/**
+	 * non_coloc_6ghz - Force scanning of non-PSC 6 GHz channels
+	 *
+	 * If this is set, the driver should scan non-PSC channels from the
+	 * scan request even if neighbor reports from 2.4/5 GHz APs did not
+	 * report a co-located AP on these channels. The default is to scan
+	 * non-PSC channels only if a co-located AP was reported on the channel.
+	 */
+	unsigned int non_coloc_6ghz:1;
+
 	/*
 	 * NOTE: Whenever adding new parameters here, please make sure
 	 * wpa_scan_clone_params() and wpa_scan_free_params() get updated with
@@ -693,6 +720,21 @@ struct wpa_driver_auth_params {
 	 * auth_data_len - Length of auth_data buffer in octets
 	 */
 	size_t auth_data_len;
+
+	/**
+	 * mld - Establish an MLD connection
+	 */
+	bool mld;
+
+	/**
+	 * mld_link_id - The link ID of the MLD AP to which we are associating
+	 */
+	u8 mld_link_id;
+
+	/**
+	 * The MLD AP address
+	 */
+	const u8 *ap_mld_addr;
 };
 
 /**
@@ -782,6 +824,16 @@ struct hostapd_freq_params {
 	 * for IEEE 802.11ay EDMG configuration.
 	 */
 	struct ieee80211_edmg_config edmg;
+
+	/**
+	 * radar_background - Whether radar/CAC background is requested
+	 */
+	bool radar_background;
+
+	/**
+	 * eht_enabled - Whether EHT is enabled
+	 */
+	bool eht_enabled;
 };
 
 /**
@@ -844,6 +896,38 @@ struct wpa_driver_sta_auth_params {
 	 * fils_kek_len - Length of the fils_kek in octets (required for FILS)
 	 */
 	size_t fils_kek_len;
+};
+
+struct wpa_driver_mld_params {
+	/**
+	 * mld_addr - AP's MLD address
+	 */
+	const u8 *mld_addr;
+
+	/**
+	 * valid_links - The valid links including the association link
+	 */
+	u16 valid_links;
+
+	/**
+	 * assoc_link_id - The link on which the association is performed
+	 */
+	u8 assoc_link_id;
+
+	/**
+	 * mld_links - Link information
+	 *
+	 * Should include information on all the requested links for association
+	 * including the link on which the association should take place.
+	 * For the association link, the ies and ies_len should be NULL and
+	 * 0 respectively.
+	 */
+	struct {
+		int freq;
+		const u8 *bssid;
+		const u8 *ies;
+		size_t ies_len;
+	} mld_links[MAX_NUM_MLD_LINKS];
 };
 
 /**
@@ -961,6 +1045,17 @@ struct wpa_driver_associate_params {
 	 * This is usually ignored if @wpa_ie is used.
 	 */
 	unsigned int key_mgmt_suite;
+
+	/**
+	 * allowed_key_mgmts - Bitfield of allowed key management suites
+	 * (WPA_KEY_MGMT_*) other than @key_mgmt_suite for the current
+	 * connection
+	 *
+	 * SME in the driver may choose key_mgmt from this list for the initial
+	 * connection or roaming. The driver which doesn't support this
+	 * ignores this parameter.
+	 */
+	unsigned int allowed_key_mgmts;
 
 	/**
 	 * auth_alg - Allowed authentication algorithms
@@ -1202,7 +1297,17 @@ struct wpa_driver_associate_params {
 	 * 1 = hash-to-element only
 	 * 2 = both hunting-and-pecking loop and hash-to-element enabled
 	 */
-	int sae_pwe;
+	enum sae_pwe sae_pwe;
+
+	/**
+	 * disable_eht - Disable EHT for this connection
+	 */
+	int disable_eht;
+
+	/*
+	 * mld_params - MLD association parameters
+	 */
+	struct wpa_driver_mld_params mld_params;
 };
 
 enum hide_ssid {
@@ -1546,7 +1651,7 @@ struct wpa_driver_ap_params {
 	 * 1 = hash-to-element only
 	 * 2 = both hunting-and-pecking loop and hash-to-element enabled
 	 */
-	int sae_pwe;
+	enum sae_pwe sae_pwe;
 
 	/**
 	 * FILS Discovery frame minimum interval in TUs
@@ -1582,6 +1687,42 @@ struct wpa_driver_ap_params {
 	 * Unsolicited broadcast Probe Response template length
 	 */
 	size_t unsol_bcast_probe_resp_tmpl_len;
+
+	/**
+	 * mbssid_tx_iface - Transmitting interface of the MBSSID set
+	 */
+	const char *mbssid_tx_iface;
+
+	/**
+	 * mbssid_index - The index of this BSS in the MBSSID set
+	 */
+	unsigned int mbssid_index;
+
+	/**
+	 * mbssid_elem - Buffer containing all MBSSID elements
+	 */
+	u8 *mbssid_elem;
+
+	/**
+	 * mbssid_elem_len - Total length of all MBSSID elements
+	 */
+	size_t mbssid_elem_len;
+
+	/**
+	 * mbssid_elem_count - The number of MBSSID elements
+	 */
+	u8 mbssid_elem_count;
+
+	/**
+	 * mbssid_elem_offset - Offsets to elements in mbssid_elem.
+	 * Kernel will use these offsets to generate multiple BSSID beacons.
+	 */
+	u8 **mbssid_elem_offset;
+
+	/**
+	 * ema - Enhanced MBSSID advertisements support.
+	 */
+	bool ema;
 };
 
 struct wpa_driver_mesh_bss_params {
@@ -1735,6 +1876,12 @@ struct wpa_driver_set_key_params {
 	 * %KEY_FLAG_RX_TX
 	 *  RX/TX key. */
 	enum key_flag key_flag;
+
+	/**
+	 * link_id - MLO Link ID
+	 *
+	 * Set to a valid Link ID (0-14) when applicable, otherwise -1. */
+	int link_id;
 };
 
 enum wpa_driver_if_type {
@@ -1832,6 +1979,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_CAPA_KEY_MGMT_FT_802_1X_SHA384	0x00200000
 #define WPA_DRIVER_CAPA_KEY_MGMT_CCKM		0x00400000
 #define WPA_DRIVER_CAPA_KEY_MGMT_OSEN		0x00800000
+#define WPA_DRIVER_CAPA_KEY_MGMT_SAE_EXT_KEY	0x01000000
+#define WPA_DRIVER_CAPA_KEY_MGMT_FT_SAE_EXT_KEY	0x02000000
 	/** Bitfield of supported key management suites */
 	unsigned int key_mgmt;
 	unsigned int key_mgmt_iftype[WPA_IF_MAX];
@@ -2010,15 +2159,15 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_CONTROL_PORT_RX	0x0000000000000001ULL
 /** Driver supports TX status reports for EAPOL frames through control port */
 #define WPA_DRIVER_FLAGS2_CONTROL_PORT_TX_STATUS 0x0000000000000002ULL
-/** Driver supports secure LTF */
-#define WPA_DRIVER_FLAGS2_SEC_LTF		0x0000000000000004ULL
-/** Driver supports secure RTT measurement exchange */
-#define WPA_DRIVER_FLAGS2_SEC_RTT		0x0000000000000008ULL
+/** Driver supports secure LTF in AP mode */
+#define WPA_DRIVER_FLAGS2_SEC_LTF_AP		0x0000000000000004ULL
+/** Driver supports secure RTT measurement exchange in AP mode */
+#define WPA_DRIVER_FLAGS2_SEC_RTT_AP		0x0000000000000008ULL
 /**
  * Driver supports protection of range negotiation and measurement management
- * frames
+ * frames in AP mode
  */
-#define WPA_DRIVER_FLAGS2_PROT_RANGE_NEG	0x0000000000000010ULL
+#define WPA_DRIVER_FLAGS2_PROT_RANGE_NEG_AP	0x0000000000000010ULL
 /** Driver supports Beacon frame TX rate configuration (HE rates) */
 #define WPA_DRIVER_FLAGS2_BEACON_RATE_HE	0x0000000000000020ULL
 /** Driver supports Beacon protection only in client mode */
@@ -2031,6 +2180,17 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_SA_QUERY_OFFLOAD_AP	0x0000000000000200ULL
 /** Driver supports background radar/CAC detection */
 #define WPA_DRIVER_RADAR_BACKGROUND		0x0000000000000400ULL
+/** Driver supports secure LTF in STA mode */
+#define WPA_DRIVER_FLAGS2_SEC_LTF_STA		0x0000000000000800ULL
+/** Driver supports secure RTT measurement exchange in STA mode */
+#define WPA_DRIVER_FLAGS2_SEC_RTT_STA		0x0000000000001000ULL
+/**
+ * Driver supports protection of range negotiation and measurement management
+ * frames in STA mode
+ */
+#define WPA_DRIVER_FLAGS2_PROT_RANGE_NEG_STA	0x0000000000002000ULL
+/** Driver supports MLO in station/AP mode */
+#define WPA_DRIVER_FLAGS2_MLO			0x0000000000004000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -2143,6 +2303,14 @@ struct wpa_driver_capa {
 
 	/* Maximum number of supported CSA counters */
 	u16 max_csa_counters;
+
+	/* Maximum number of supported AKM suites in commands */
+	unsigned int max_num_akms;
+
+	/* Maximum number of interfaces supported for MBSSID advertisement */
+	unsigned int mbssid_max_interfaces;
+	/* Maximum profile periodicity for enhanced MBSSID advertisement */
+	unsigned int ema_max_periodicity;
 };
 
 
@@ -2158,14 +2326,19 @@ struct hostapd_data;
 #define STA_DRV_DATA_RX_SHORT_GI BIT(7)
 #define STA_DRV_DATA_LAST_ACK_RSSI BIT(8)
 #define STA_DRV_DATA_CONN_TIME BIT(9)
+#define STA_DRV_DATA_TX_HE_MCS BIT(10)
+#define STA_DRV_DATA_RX_HE_MCS BIT(11)
+#define STA_DRV_DATA_TX_HE_NSS BIT(12)
+#define STA_DRV_DATA_RX_HE_NSS BIT(13)
 
 struct hostap_sta_driver_data {
 	unsigned long rx_packets, tx_packets;
 	unsigned long long rx_bytes, tx_bytes;
 	unsigned long long rx_airtime, tx_airtime;
+	unsigned long long beacons_count;
 	int bytes_64bit; /* whether 64-bit byte counters are supported */
-	unsigned long current_tx_rate;
-	unsigned long current_rx_rate;
+	unsigned long current_tx_rate; /* in kbps */
+	unsigned long current_rx_rate; /* in kbps */
 	unsigned long inactive_msec;
 	unsigned long connected_sec;
 	unsigned long flags; /* bitfield of STA_DRV_DATA_* */
@@ -2175,13 +2348,25 @@ struct hostap_sta_driver_data {
 	s8 last_ack_rssi;
 	unsigned long backlog_packets;
 	unsigned long backlog_bytes;
-	s8 signal;
+	unsigned long fcs_error_count;
+	unsigned long beacon_loss_count;
+	unsigned long expected_throughput;
+	unsigned long rx_drop_misc;
+	unsigned long rx_mpdus;
+	int signal; /* dBm; or -WPA_INVALID_NOISE */
+	u8 rx_hemcs;
+	u8 tx_hemcs;
 	u8 rx_vhtmcs;
 	u8 tx_vhtmcs;
 	u8 rx_mcs;
 	u8 tx_mcs;
+	u8 rx_he_nss;
+	u8 tx_he_nss;
 	u8 rx_vht_nss;
 	u8 tx_vht_nss;
+	s8 avg_signal; /* dBm */
+	s8 avg_beacon_signal; /* dBm */
+	s8 avg_ack_signal; /* dBm */
 };
 
 struct hostapd_sta_add_params {
@@ -2198,6 +2383,8 @@ struct hostapd_sta_add_params {
 	const struct ieee80211_he_capabilities *he_capab;
 	size_t he_capab_len;
 	const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab;
+	const struct ieee80211_eht_capabilities *eht_capab;
+	size_t eht_capab_len;
 	u32 flags; /* bitmask of WPA_STA_* flags */
 	u32 flags_mask; /* unset bits in flags */
 #ifdef CONFIG_MESH
@@ -2306,11 +2493,8 @@ enum smps_mode {
  * @frequency: control frequency
  * @above_threshold: true if the above threshold was crossed
  *	(relevant for a CQM event)
- * @current_signal: in dBm
- * @avg_signal: in dBm
- * @avg_beacon_signal: in dBm
+ * @data: STA information
  * @current_noise: %WPA_INVALID_NOISE if not supported
- * @current_txrate: current TX rate
  * @chanwidth: channel width
  * @center_frq1: center frequency for the first segment
  * @center_frq2: center frequency for the second segment (if relevant)
@@ -2318,14 +2502,16 @@ enum smps_mode {
 struct wpa_signal_info {
 	u32 frequency;
 	int above_threshold;
-	int current_signal;
-	int avg_signal;
-	int avg_beacon_signal;
+	struct hostap_sta_driver_data data;
 	int current_noise;
-	int current_txrate;
 	enum chan_width chanwidth;
 	int center_frq1;
 	int center_frq2;
+};
+
+struct wpa_mlo_signal_info {
+	u16 valid_links;
+	struct wpa_signal_info links[MAX_NUM_MLD_LINKS];
 };
 
 /**
@@ -2401,6 +2587,27 @@ struct csa_settings {
 	u16 counter_offset_presp[2];
 };
 
+/**
+ * struct cca_settings - Settings for color switch command
+ * @cca_count: Count in Beacon frames (TBTT) to perform the switch
+ * @cca_color: The new color that we are switching to
+ * @beacon_cca: Beacon/Probe Response/(Re)Association Response frame info for
+ * color switch period
+ * @beacon_after: Next Beacon/Probe Response/(Re)Association Response frame info
+ * @counter_offset_beacon: Offset to the count field in Beacon frame tail
+ * @counter_offset_presp: Offset to the count field in Probe Response frame
+ */
+struct cca_settings {
+	u8 cca_count;
+	u8 cca_color;
+
+	struct beacon_data beacon_cca;
+	struct beacon_data beacon_after;
+
+	u16 counter_offset_beacon;
+	u16 counter_offset_presp;
+};
+
 /* TDLS peer capabilities for send_tdls_mgmt() */
 enum tdls_peer_capability {
 	TDLS_PEER_HT = BIT(0),
@@ -2465,6 +2672,9 @@ struct drv_acs_params {
 
 	/* Indicates whether EDMG is enabled */
 	int edmg_enabled;
+
+	/* Indicates whether EHT is enabled */
+	bool eht_enabled;
 };
 
 struct wpa_bss_trans_info {
@@ -2533,11 +2743,125 @@ struct external_auth {
 	const u8 *pmkid;
 };
 
+#define WPAS_MAX_PASN_PEERS 10
+
+enum pasn_status {
+	PASN_STATUS_SUCCESS = 0,
+	PASN_STATUS_FAILURE = 1,
+};
+
+/**
+ * struct pasn_peer - PASN peer parameters
+ *
+ * Used to process the PASN authentication event from the driver to
+ * userspace and to send a response back.
+ * @own_addr: Own MAC address specified by the driver to use for PASN
+ *	handshake.
+ * @peer_addr: MAC address of the peer with which PASN authentication is to be
+ *	performed.
+ * @network_id: Unique id for the network.
+ *	This identifier is used as a unique identifier for each network
+ *	block when using the control interface. Each network is allocated an
+ *	id when it is being created, either when reading the configuration
+ *	file or when a new network is added through the control interface.
+ * @akmp: Authentication key management protocol type supported.
+ * @cipher: Cipher suite.
+ * @group: Finite cyclic group. Default group used is 19 (ECC).
+ * @ltf_keyseed_required: Indicates whether LTF keyseed generation is required
+ * @status: PASN response status, %PASN_STATUS_SUCCESS for successful
+ *	authentication, use %PASN_STATUS_FAILURE if PASN authentication
+ *	fails or if wpa_supplicant fails to set the security ranging context to
+ *	the driver
+ */
+struct pasn_peer {
+	u8 own_addr[ETH_ALEN];
+	u8 peer_addr[ETH_ALEN];
+	int network_id;
+	int akmp;
+	int cipher;
+	int group;
+	bool ltf_keyseed_required;
+	enum pasn_status status;
+};
+
+/**
+ * struct pasn_auth - PASN authentication trigger parameters
+ *
+ * These are used across the PASN authentication event from the driver to
+ * userspace and to send a response to it.
+ * @action: Action type. Only significant for the event interface.
+ * @num_peers: The number of peers for which the PASN handshake is requested
+ *	for.
+ * @peer: Holds the peer details.
+ */
+struct pasn_auth {
+	enum {
+		PASN_ACTION_AUTH,
+		PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT,
+	} action;
+	unsigned int num_peers;
+	struct pasn_peer peer[WPAS_MAX_PASN_PEERS];
+};
+
+/**
+ * struct secure_ranging_params - Parameters required to set secure ranging
+ *	context for a peer.
+ *
+ * @action: Add or delete a security context to the driver.
+ * @own_addr: Own MAC address used during key derivation.
+ * @peer_addr: Address of the peer device.
+ * @cipher: Cipher suite.
+ * @tk_len: Length of temporal key.
+ * @tk: Temporal key buffer.
+ * @ltf_keyseed_len: Length of LTF keyseed.
+ * @ltf_keyeed: LTF keyseed buffer.
+ */
+struct secure_ranging_params {
+	u32 action;
+	const u8 *own_addr;
+	const u8 *peer_addr;
+	u32 cipher;
+	u8 tk_len;
+	const u8 *tk;
+	u8 ltf_keyseed_len;
+	const u8 *ltf_keyseed;
+};
+
 /* enum nested_attr - Used to specify if subcommand uses nested attributes */
 enum nested_attr {
 	NESTED_ATTR_NOT_USED = 0,
 	NESTED_ATTR_USED = 1,
 	NESTED_ATTR_UNSPECIFIED = 2,
+};
+
+/* Preferred channel list information */
+
+/* GO role */
+#define WEIGHTED_PCL_GO BIT(0)
+/* P2P Client role */
+#define WEIGHTED_PCL_CLI BIT(1)
+/* Must be considered for operating channel */
+#define WEIGHTED_PCL_MUST_CONSIDER BIT(2)
+/* Should be excluded in GO negotiation */
+#define WEIGHTED_PCL_EXCLUDE BIT(3)
+
+/* Preferred channel list with weight */
+struct weighted_pcl {
+	u32 freq; /* MHz */
+	u8 weight;
+	u32 flag; /* bitmap for WEIGHTED_PCL_* */
+};
+
+struct driver_sta_mlo_info {
+	u16 req_links; /* bitmap of requested link IDs */
+	u16 valid_links; /* bitmap of accepted link IDs */
+	u8 assoc_link_id;
+	u8 ap_mld_addr[ETH_ALEN];
+	struct {
+		u8 addr[ETH_ALEN];
+		u8 bssid[ETH_ALEN];
+		unsigned int freq;
+	} links[MAX_NUM_MLD_LINKS];
 };
 
 /**
@@ -2760,9 +3084,9 @@ struct wpa_driver_ops {
 	 * poll - Poll driver for association information
 	 * @priv: private driver interface data
 	 *
-	 * This is an option callback that can be used when the driver does not
-	 * provide event mechanism for association events. This is called when
-	 * receiving WPA EAPOL-Key messages that require association
+	 * This is an optional callback that can be used when the driver does
+	 * not provide event mechanism for association events. This is called
+	 * when receiving WPA/RSN EAPOL-Key messages that require association
 	 * information. The driver interface is supposed to generate associnfo
 	 * event before returning from this callback function. In addition, the
 	 * driver interface should generate an association event after having
@@ -3787,6 +4111,14 @@ struct wpa_driver_ops {
 	int (*signal_poll)(void *priv, struct wpa_signal_info *signal_info);
 
 	/**
+	 * mlo_signal_poll - Get current MLO connection information
+	 * @priv: Private driver interface data
+	 * @mlo_signal_info: MLO connection info structure
+	 */
+	int (*mlo_signal_poll)(void *priv,
+			       struct wpa_mlo_signal_info *mlo_signal_info);
+
+	/**
 	 * channel_info - Get parameters of the current operating channel
 	 * @priv: Private driver interface data
 	 * @channel_info: Channel info structure
@@ -3982,6 +4314,17 @@ struct wpa_driver_ops {
 	 * avoid frequency conflict in single channel concurrency.
 	 */
 	int (*switch_channel)(void *priv, struct csa_settings *settings);
+
+	/**
+	 * switch_color - Announce color switch and migrate the BSS to the
+	 * given color
+	 * @priv: Private driver interface data
+	 * @settings: Settings for CCA period and new color
+	 * Returns: 0 on success, -1 on failure
+	 *
+	 * This function is used to move the BSS to its new color.
+	 */
+	int (*switch_color)(void *priv, struct cca_settings *settings);
 
 	/**
 	 * add_tx_ts - Add traffic stream
@@ -4373,14 +4716,17 @@ struct wpa_driver_ops {
 	 * @priv: Private driver interface data
 	 * @if_type: Interface type
 	 * @num: Number of channels
-	 * @freq_list: Preferred channel frequency list encoded in MHz values
+	 * @freq_list: Weighted preferred channel list
 	 * Returns 0 on success, -1 on failure
 	 *
 	 * This command can be used to query the preferred frequency list from
-	 * the driver specific to a particular interface type.
+	 * the driver specific to a particular interface type. The freq_list
+	 * array needs to have room for *num entries. *num will be updated to
+	 * indicate the number of entries fetched from the driver.
 	 */
 	int (*get_pref_freq_list)(void *priv, enum wpa_driver_if_type if_type,
-				  unsigned int *num, unsigned int *freq_list);
+				  unsigned int *num,
+				  struct weighted_pcl *freq_list);
 
 	/**
 	 * set_prob_oper_freq - Indicate probable P2P operating channel
@@ -4568,6 +4914,37 @@ struct wpa_driver_ops {
 	 * explicitly allow reception of broadcast Public Action frames.
 	 */
 	int (*dpp_listen)(void *priv, bool enable);
+
+	/**
+	 * set_secure_ranging_ctx - Add or delete secure ranging parameters of
+	 * the specified peer to the driver.
+	 * @priv: Private driver interface data
+	 * @params: Secure ranging parameters
+	 * Returns: 0 on success, -1 on failure
+	 *
+	 */
+	int (*set_secure_ranging_ctx)(void *priv,
+				      struct secure_ranging_params *params);
+
+	/**
+	 * send_pasn_resp - Send PASN response for a set of peers to the
+	 * driver.
+	 * @priv: Private driver interface data
+	 * @params: Parameters holding peers and respective status.
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*send_pasn_resp)(void *priv, struct pasn_auth *params);
+
+	/**
+	 * get_sta_mlo_info - Get the current multi-link association info
+	 * @priv: Private driver interface data
+	 * @mlo: Pointer to fill multi-link association info
+	 * Returns: 0 on success, -1 on failure
+	 *
+	 * This callback is used to fetch multi-link of the current association.
+	 */
+	int (*get_sta_mlo_info)(void *priv,
+				struct driver_sta_mlo_info *mlo_info);
 
 #ifdef CONFIG_TESTING_OPTIONS
 	int (*register_frame)(void *priv, u16 type,
@@ -5142,6 +5519,50 @@ enum wpa_event_type {
 	 * non-zero wait time and that has not been explicitly cancelled.
 	 */
 	EVENT_TX_WAIT_EXPIRE,
+
+	/**
+	  * EVENT_BSS_COLOR_COLLISION - Notification of a BSS color collision
+	  */
+	EVENT_BSS_COLOR_COLLISION,
+
+	/**
+	 * EVENT_CCA_STARTED_NOTIFY - Notification that CCA has started
+	 */
+	EVENT_CCA_STARTED_NOTIFY,
+
+	/**
+	 * EVENT_CCA_ABORTED_NOTIFY - Notification that CCA has aborted
+	 */
+	EVENT_CCA_ABORTED_NOTIFY,
+
+	/**
+	 * EVENT_CCA_NOTIFY - Notification that CCA has completed
+	 */
+	EVENT_CCA_NOTIFY,
+
+	/**
+	 * EVENT_PASN_AUTH - This event is used by the driver that requests
+	 * PASN authentication and secure ranging context for multiple peers.
+	 */
+	EVENT_PASN_AUTH,
+
+	/**
+	 * EVENT_LINK_CH_SWITCH - MLD AP link decided to switch channels
+	 *
+	 * Described in wpa_event_data.ch_switch.
+	 *
+	 */
+	EVENT_LINK_CH_SWITCH,
+
+	/**
+	 * EVENT_LINK_CH_SWITCH_STARTED - MLD AP link started to switch channels
+	 *
+	 * This is a pre-switch event indicating the shortly following switch
+	 * of operating channels.
+	 *
+	 * Described in wpa_event_data.ch_switch.
+	 */
+	EVENT_LINK_CH_SWITCH_STARTED,
 };
 
 
@@ -5764,6 +6185,7 @@ union wpa_event_data {
 		const u8 *src;
 		const u8 *data;
 		size_t data_len;
+		enum frame_encryption encrypted;
 	} eapol_rx;
 
 	/**
@@ -5856,6 +6278,7 @@ union wpa_event_data {
 	 * @ch_width: Channel width
 	 * @cf1: Center frequency 1
 	 * @cf2: Center frequency 2
+	 * @link_id: Link ID of the MLO link
 	 */
 	struct ch_switch {
 		int freq;
@@ -5864,6 +6287,7 @@ union wpa_event_data {
 		enum chan_width ch_width;
 		int cf1;
 		int cf2;
+		int link_id;
 	} ch_switch;
 
 	/**
@@ -6034,6 +6458,19 @@ union wpa_event_data {
 	struct unprot_beacon {
 		const u8 *sa;
 	} unprot_beacon;
+
+	/**
+	 * struct bss_color_collision - Data for EVENT_BSS_COLOR_COLLISION
+	 */
+	struct bss_color_collision {
+		u64 bitmap;
+	} bss_color_collision;
+
+	/**
+	 * struct pasn_auth - Data for EVENT_PASN_AUTH
+	 */
+	struct pasn_auth pasn_auth;
+
 };
 
 /**
@@ -6095,6 +6532,20 @@ static inline void drv_event_eapol_rx(void *ctx, const u8 *src, const u8 *data,
 	event.eapol_rx.src = src;
 	event.eapol_rx.data = data;
 	event.eapol_rx.data_len = data_len;
+	event.eapol_rx.encrypted = FRAME_ENCRYPTION_UNKNOWN;
+	wpa_supplicant_event(ctx, EVENT_EAPOL_RX, &event);
+}
+
+static inline void drv_event_eapol_rx2(void *ctx, const u8 *src, const u8 *data,
+				      size_t data_len,
+				       enum frame_encryption encrypted)
+{
+	union wpa_event_data event;
+	os_memset(&event, 0, sizeof(event));
+	event.eapol_rx.src = src;
+	event.eapol_rx.data = data;
+	event.eapol_rx.data_len = data_len;
+	event.eapol_rx.encrypted = encrypted;
 	wpa_supplicant_event(ctx, EVENT_EAPOL_RX, &event);
 }
 

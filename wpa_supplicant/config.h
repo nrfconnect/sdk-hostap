@@ -181,6 +181,26 @@ struct wpa_cred {
 	char *milenage;
 
 	/**
+	 * imsi_privacy_cert - IMSI privacy certificate
+	 *
+	 * This field is used with EAP-SIM/AKA/AKA' to encrypt the permanent
+	 * identity (IMSI) to improve privacy. The referenced PEM-encoded
+	 * X.509v3 certificate needs to include a 2048-bit RSA public key and
+	 * this is from the operator who authenticates the SIM/USIM.
+	 */
+	char *imsi_privacy_cert;
+
+	/**
+	 * imsi_privacy_attr - IMSI privacy attribute
+	 *
+	 * This field is used to help the EAP-SIM/AKA/AKA' server to identify
+	 * the used certificate (and as such, the matching private key). This
+	 * is set to an attribute in name=value format if the operator needs
+	 * this information.
+	 */
+	char *imsi_privacy_attr;
+
+	/**
 	 * engine - Use an engine for private key operations
 	 */
 	int engine;
@@ -239,36 +259,50 @@ struct wpa_cred {
 	size_t num_domain;
 
 	/**
-	 * roaming_consortium - Roaming Consortium OI
+	 * home_ois - Home OIs
 	 *
-	 * If roaming_consortium_len is non-zero, this field contains the
-	 * Roaming Consortium OI that can be used to determine which access
-	 * points support authentication with this credential. This is an
-	 * alternative to the use of the realm parameter. When using Roaming
-	 * Consortium to match the network, the EAP parameters need to be
-	 * pre-configured with the credential since the NAI Realm information
-	 * may not be available or fetched.
+	 * If num_home_ois is non-zero, this field contains the set of Home OIs
+	 * that can be use to determine which access points support
+	 * authentication with this credential. These are an alternative to the
+	 * use of the realm parameter. When using Home OIs to match the network,
+	 * the EAP parameters need to be pre-configured with the credentials
+	 * since the NAI Realm information may not be available or fetched.
+	 * A successful authentication with the access point is possible as soon
+	 * as at least one Home OI from the list matches an OI in the Roaming
+	 * Consortium list advertised by the access point.
+	 * (Hotspot 2.0 PerProviderSubscription/<X+>/HomeSP/HomeOIList/<X+>/HomeOI)
 	 */
-	u8 roaming_consortium[15];
+	u8 home_ois[MAX_ROAMING_CONS][MAX_ROAMING_CONS_OI_LEN];
 
 	/**
-	 * roaming_consortium_len - Length of roaming_consortium
+	 * home_ois_len - Length of home_ois[i]
 	 */
-	size_t roaming_consortium_len;
+	size_t home_ois_len[MAX_ROAMING_CONS];
 
 	/**
-	 * required_roaming_consortium - Required Roaming Consortium OI
+	 * num_home_ois - Number of entries in home_ois
+	 */
+	unsigned int num_home_ois;
+
+	/**
+	 * required_home_ois - Required Home OI(s)
 	 *
-	 * If required_roaming_consortium_len is non-zero, this field contains
-	 * the Roaming Consortium OI that is required to be advertised by the AP
-	 * for the credential to be considered matching.
+	 * If required_home_ois_len is non-zero, this field contains the set of
+	 * Home OI(s) that are required to be advertised by the AP for the
+	 * credential to be considered matching.
+	 * (Hotspot 2.0 PerProviderSubscription/<X+>/HomeSP/HomeOIList/<X+>/HomeOIRequired)
 	 */
-	u8 required_roaming_consortium[15];
+	u8 required_home_ois[MAX_ROAMING_CONS][MAX_ROAMING_CONS_OI_LEN];
 
 	/**
-	 * required_roaming_consortium_len - Length of required_roaming_consortium
+	 * required_home_ois_len - Length of required_home_ois
 	 */
-	size_t required_roaming_consortium_len;
+	size_t required_home_ois_len[MAX_ROAMING_CONS];
+
+	/**
+	 * num_required_home_ois - Number of entries in required_home_ois
+	 */
+	unsigned int num_required_home_ois;
 
 	/**
 	 * roaming_consortiums - Roaming Consortium OI(s) memberships
@@ -1219,6 +1253,25 @@ struct wpa_config {
 	enum mfp_options pmf;
 
 	/**
+	 * sae_check_mfp - Whether to limit SAE based on PMF capabilities
+	 *
+	 * With this check SAE key_mgmt will not be selected if PMF is
+	 * not enabled.
+	 * Scenarios where enabling this check will limit SAE:
+	 *  1) ieee8011w=0 is set for the network.
+	 *  2) The AP does not have PMF enabled.
+	 *  3) ieee8011w for the network is the default(3), pmf=1 is enabled
+	 *     globally and the device does not support the BIP cipher.
+	 *
+	 * Useful to allow the BIP cipher check that occurs for ieee80211w=3
+	 * and pmf=1 to also avoid using SAE key_mgmt.
+	 * Useful when hardware does not support BIP to still to allow
+	 * connecting to sae_require_mfp=1 WPA2+WPA3-Personal transition mode
+	 *access points by automatically selecting PSK instead of SAE.
+	 */
+	int sae_check_mfp;
+
+	/**
 	 * sae_groups - Preference list of enabled groups for SAE
 	 *
 	 * By default (if this parameter is not set), the mandatory group 19
@@ -1234,7 +1287,7 @@ struct wpa_config {
 	 * 1 = hash-to-element only
 	 * 2 = both hunting-and-pecking loop and hash-to-element enabled
 	 */
-	int sae_pwe;
+	enum sae_pwe sae_pwe;
 
 	/**
 	 * sae_pmkid_in_assoc - Whether to include PMKID in SAE Assoc Req
@@ -1598,6 +1651,25 @@ struct wpa_config {
 	char *dpp_mud_url;
 
 	/**
+	 * dpp_extra_conf_req_name - JSON node name of additional data for
+	 * Enrollee's DPP Configuration Request
+	 */
+	char *dpp_extra_conf_req_name;
+
+	/**
+	 * dpp_extra_conf_req_value - JSON node data of additional data for
+	 * Enrollee's DPP Configuration Request
+	 */
+	char *dpp_extra_conf_req_value;
+
+	/* dpp_connector_privacy_default - Default valur for Connector privacy
+	 *
+	 * This value is used as the default for the dpp_connector_privacy
+	 * network parameter for all new networks provisioned using DPP.
+	 */
+	int dpp_connector_privacy_default;
+
+	/**
 	 * coloc_intf_reporting - Colocated interference reporting
 	 *
 	 * dot11CoLocIntfReportingActivated
@@ -1768,6 +1840,7 @@ const char * wpa_config_get_global_field_name(unsigned int i, int *no_var);
  * @name: Name of the configuration (e.g., path and file name for the
  * configuration file)
  * @cfgp: Pointer to previously allocated configuration data or %NULL if none
+ * @ro: Whether to mark networks from this configuration as read-only
  * Returns: Pointer to allocated configuration data or %NULL on failure
  *
  * This function reads configuration data, parses its contents, and allocates
@@ -1776,7 +1849,8 @@ const char * wpa_config_get_global_field_name(unsigned int i, int *no_var);
  *
  * Each configuration backend needs to implement this function.
  */
-struct wpa_config * wpa_config_read(const char *name, struct wpa_config *cfgp);
+struct wpa_config * wpa_config_read(const char *name, struct wpa_config *cfgp,
+				    bool ro);
 
 /**
  * wpa_config_write - Write or update configuration data

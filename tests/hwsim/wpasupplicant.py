@@ -454,7 +454,8 @@ class WpaSupplicant:
                   "excluded_ssid", "milenage", "ca_cert", "client_cert",
                   "private_key", "domain_suffix_match", "provisioning_sp",
                   "roaming_partner", "phase1", "phase2", "private_key_passwd",
-                  "roaming_consortiums"]
+                  "roaming_consortiums", "imsi_privacy_cert",
+                  "imsi_privacy_attr"]
         for field in quoted:
             if field in params:
                 self.set_cred_quoted(id, field, params[field])
@@ -467,6 +468,11 @@ class WpaSupplicant:
         for field in not_quoted:
             if field in params:
                 self.set_cred(id, field, params[field])
+
+        as_list = ["home_ois", "required_home_ois"]
+        for field in as_list:
+            if field in params:
+                self.set_cred_quoted(id, field, ','.join(params[field]))
 
         return id
 
@@ -1077,12 +1083,13 @@ class WpaSupplicant:
                   "ca_cert", "client_cert", "private_key",
                   "private_key_passwd", "ca_cert2", "client_cert2",
                   "private_key2", "phase1", "phase2", "domain_suffix_match",
-                  "altsubject_match", "subject_match", "pac_file", "dh_file",
+                  "altsubject_match", "subject_match", "pac_file",
                   "bgscan", "ht_mcs", "id_str", "openssl_ciphers",
                   "domain_match", "dpp_connector", "sae_password",
                   "sae_password_id", "check_cert_subject",
                   "machine_ca_cert", "machine_client_cert",
-                  "machine_private_key", "machine_phase2"]
+                  "machine_private_key", "machine_phase2",
+                  "imsi_identity", "imsi_privacy_cert", "imsi_privacy_attr"]
         for field in quoted:
             if field in kwargs and kwargs[field]:
                 self.set_network_quoted(id, field, kwargs[field])
@@ -1101,19 +1108,21 @@ class WpaSupplicant:
                       "engine", "fils_dh_group", "bssid_hint",
                       "dpp_csign", "dpp_csign_expiry",
                       "dpp_netaccesskey", "dpp_netaccesskey_expiry", "dpp_pfs",
+                      "dpp_connector_privacy",
                       "group_mgmt", "owe_group", "owe_only",
                       "owe_ptk_workaround",
                       "transition_disable", "sae_pk",
                       "roaming_consortium_selection", "ocv",
                       "multi_ap_backhaul_sta", "rx_stbc", "tx_stbc",
                       "ft_eap_pmksa_caching", "beacon_prot",
+                      "mac_value",
                       "wpa_deny_ptk0_rekey"]
         for field in not_quoted:
             if field in kwargs and kwargs[field]:
                 self.set_network(id, field, kwargs[field])
 
         known_args = {"raw_psk", "password_hex", "peerkey", "okc", "ocsp",
-                      "only_add_network", "wait_connect"}
+                      "only_add_network", "wait_connect", "raw_identity"}
         unknown = set(kwargs.keys())
         unknown -= set(quoted)
         unknown -= set(not_quoted)
@@ -1121,6 +1130,8 @@ class WpaSupplicant:
         if unknown:
             raise Exception("Unknown WpaSupplicant::connect() arguments: " + str(unknown))
 
+        if "raw_identity" in kwargs and kwargs['raw_identity']:
+            self.set_network(id, "identity", kwargs['raw_identity'])
         if "raw_psk" in kwargs and kwargs['raw_psk']:
             self.set_network(id, "psk", kwargs['raw_psk'])
         if "password_hex" in kwargs and kwargs['password_hex']:
@@ -1137,7 +1148,7 @@ class WpaSupplicant:
             if "eap" in kwargs:
                 self.connect_network(id, timeout=20)
             else:
-                self.connect_network(id)
+                self.connect_network(id, timeout=15)
         else:
             self.dump_monitor()
             self.select_network(id)
@@ -1239,9 +1250,12 @@ class WpaSupplicant:
         if check_bssid and self.get_status_field('bssid') != bssid:
             raise Exception("Did not roam to correct BSSID")
 
-    def roam_over_ds(self, bssid, fail_test=False):
+    def roam_over_ds(self, bssid, fail_test=False, force=False):
         self.dump_monitor()
-        if "OK" not in self.request("FT_DS " + bssid):
+        cmd = "FT_DS " + bssid
+        if force:
+            cmd += " force"
+        if "OK" not in self.request(cmd):
             raise Exception("FT_DS failed")
         if fail_test:
             ev = self.wait_event(["CTRL-EVENT-CONNECTED"], timeout=1)
@@ -1482,7 +1496,8 @@ class WpaSupplicant:
         return int(res)
 
     def dpp_bootstrap_gen(self, type="qrcode", chan=None, mac=None, info=None,
-                          curve=None, key=None):
+                          curve=None, key=None, supported_curves=None,
+                          host=None):
         cmd = "DPP_BOOTSTRAP_GEN type=" + type
         if chan:
             cmd += " chan=" + chan
@@ -1496,6 +1511,10 @@ class WpaSupplicant:
             cmd += " curve=" + curve
         if key:
             cmd += " key=" + key
+        if supported_curves:
+            cmd += " supported_curves=" + supported_curves
+        if host:
+            cmd += " host=" + host
         res = self.request(cmd)
         if "FAIL" in res:
             raise Exception("Failed to generate bootstrapping info")

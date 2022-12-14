@@ -12,6 +12,7 @@ import time
 import hwsim_utils
 import hostapd
 from wpasupplicant import WpaSupplicant
+from utils import *
 
 def test_sta_dynamic(dev, apdev):
     """Dynamically added wpa_supplicant interface"""
@@ -252,6 +253,67 @@ def test_sta_dynamic_random_mac_addr(dev, apdev):
     if addr1 == addr2:
         raise Exception("Random MAC address did not change")
 
+def test_sta_dynamic_random_mac_addr_two_aps(dev, apdev):
+    """Dynamically added wpa_supplicant interface and random MAC address with two APs"""
+    params = hostapd.wpa2_params(ssid="sta-dynamic", passphrase="12345678")
+    hapd = hostapd.add_ap(apdev[0], params)
+    params = hostapd.wpa2_params(ssid="sta-dynamic2", passphrase="12345678")
+    hapd2 = hostapd.add_ap(apdev[1], params)
+
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5")
+    addr0 = wpas.get_driver_status_field("addr")
+    wpas.request("SET preassoc_mac_addr 1")
+    wpas.request("SET rand_addr_lifetime 0")
+
+    wpas.scan_for_bss(hapd.own_addr(), freq=2412)
+    wpas.scan_for_bss(hapd2.own_addr(), freq=2412)
+
+    id = wpas.connect("sta-dynamic", psk="12345678", mac_addr="1",
+                      scan_freq="2412")
+    addr1 = wpas.get_driver_status_field("addr")
+
+    if addr0 == addr1:
+        raise Exception("Random MAC address not used")
+
+    sta = hapd.get_sta(addr0)
+    if sta['addr'] != "FAIL":
+        raise Exception("Unexpected STA association with permanent address")
+    sta = hapd.get_sta(addr1)
+    if sta['addr'] != addr1:
+        raise Exception("STA association with random address not found")
+
+    id2 = wpas.connect("sta-dynamic2", psk="12345678", mac_addr="1",
+                      scan_freq="2412")
+    addr2 = wpas.get_driver_status_field("addr")
+    if addr0 == addr2:
+        raise Exception("Random MAC address not used(2)")
+    if addr1 == addr2:
+        raise Exception("Random MAC address not change for another ESS)")
+    sta = hapd2.get_sta(addr0)
+    if sta['addr'] != "FAIL":
+        raise Exception("Unexpected STA association with permanent address(2)")
+    sta = hapd2.get_sta(addr2)
+    if sta['addr'] != addr2:
+        raise Exception("STA association with random address not found(2)")
+
+    wpas.dump_monitor()
+    wpas.request("ENABLE_NETWORK " + str(id) + " no-connect")
+    hapd2.request("STOP_AP")
+    ev = wpas.wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=10)
+    if ev is None:
+        raise Exception("Disconnection due to beacon loss not reported")
+    if "bssid=" + hapd2.own_addr() + " reason=4 locally_generated=1" not in ev:
+        raise Exception("Unexpected disconnection event values")
+    wpas.wait_connected()
+    addr3 = wpas.get_driver_status_field("addr")
+    if addr3 == addr0 or addr3 == addr2:
+        raise Exception("Random MAC address not changed on return to previous AP")
+    hapd2.disable()
+    sta = hapd.get_sta(addr3)
+    if sta['addr'] != addr3:
+        raise Exception("STA association with random address not found(3)")
+
 def test_sta_dynamic_random_mac_addr_keep_oui(dev, apdev):
     """Dynamically added wpa_supplicant interface and random MAC address (keep OUI)"""
     params = hostapd.wpa2_params(ssid="sta-dynamic", passphrase="12345678")
@@ -294,6 +356,48 @@ def test_sta_dynamic_random_mac_addr_keep_oui(dev, apdev):
     if addr2[3:8] != addr0[3:8]:
         raise Exception("OUI was not kept")
 
+def test_sta_dynamic_random_mac_addr_per_ess(dev, apdev):
+    """Dynamically added wpa_supplicant interface and random MAC address per ESS"""
+    params = hostapd.wpa2_params(ssid="sta-dynamic", passphrase="12345678")
+    hapd = hostapd.add_ap(apdev[0], params)
+    params = hostapd.wpa2_params(ssid="sta-dynamic2", passphrase="12345678")
+    hapd2 = hostapd.add_ap(apdev[1], params)
+
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5")
+    addr0 = wpas.get_driver_status_field("addr")
+    wpas.request("SET preassoc_mac_addr 1")
+    wpas.request("SET rand_addr_lifetime 0")
+
+    wpas.scan_for_bss(hapd.own_addr(), freq=2412)
+    wpas.scan_for_bss(hapd2.own_addr(), freq=2412)
+
+    addr_ess1 = "f2:11:22:33:44:55"
+    id = wpas.connect("sta-dynamic", psk="12345678", mac_addr="3",
+                      mac_value=addr_ess1, scan_freq="2412")
+    addr1 = wpas.get_driver_status_field("addr")
+
+    if addr1 != addr_ess1:
+        raise Exception("Pregenerated MAC address not used")
+
+    addr_ess2 = "f2:66:77:88:99:aa"
+    id2 = wpas.connect("sta-dynamic2", psk="12345678", mac_addr="3",
+                       mac_value=addr_ess2, scan_freq="2412")
+    addr2 = wpas.get_driver_status_field("addr")
+    if addr2 != addr_ess2:
+        raise Exception("Pregenerated MAC address not used(2)")
+
+    wpas.dump_monitor()
+    wpas.request("ENABLE_NETWORK " + str(id) + " no-connect")
+    hapd2.request("STOP_AP")
+    ev = wpas.wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=10)
+    if ev is None:
+        raise Exception("Disconnection due to beacon loss not reported")
+    wpas.wait_connected()
+    addr3 = wpas.get_driver_status_field("addr")
+    if addr3 != addr_ess1:
+        raise Exception("Pregenerated MAC address not restored")
+
 def test_sta_dynamic_random_mac_addr_scan(dev, apdev):
     """Dynamically added wpa_supplicant interface and random MAC address for scan"""
     params = hostapd.wpa2_params(ssid="sta-dynamic", passphrase="12345678")
@@ -327,3 +431,54 @@ def test_sta_dynamic_random_mac_addr_scan_keep_oui(dev, apdev):
 
     if addr0 != addr1:
         raise Exception("Random MAC address used unexpectedly")
+
+def test_sta_dynamic_random_mac_addr_pmksa_cache(dev, apdev):
+    """Dynamically added wpa_supplicant interface and random MAC address with PMKSA caching"""
+    params = hostapd.wpa2_params(ssid="sta-dynamic", passphrase="12345678")
+    params['wpa_key_mgmt'] = 'SAE'
+    params['ieee80211w'] = '2'
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    params = hostapd.wpa2_params(ssid="another", passphrase="12345678")
+    hapd2 = hostapd.add_ap(apdev[1], params)
+
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5")
+    check_sae_capab(wpas)
+    addr0 = wpas.get_driver_status_field("addr")
+    wpas.request("SET preassoc_mac_addr 1")
+    wpas.request("SET rand_addr_lifetime 0")
+
+    wpas.set("sae_groups", "")
+    id = wpas.connect("sta-dynamic", key_mgmt="SAE", psk="12345678",
+                      ieee80211w="2",
+                      mac_addr="1", scan_freq="2412")
+    addr1 = wpas.get_driver_status_field("addr")
+
+    if addr0 == addr1:
+        raise Exception("Random MAC address not used")
+
+    sta = hapd.get_sta(addr0)
+    if sta['addr'] != "FAIL":
+        raise Exception("Unexpected STA association with permanent address")
+    sta = hapd.get_sta(addr1)
+    if sta['addr'] != addr1:
+        raise Exception("STA association with random address not found")
+
+    wpas.request("DISCONNECT")
+    wpas.wait_disconnected()
+
+    wpas.connect("another", psk="12345678", mac_addr="1", scan_freq="2412")
+    wpas.request("DISCONNECT")
+    wpas.wait_disconnected()
+
+    wpas.connect_network(id)
+
+    wpas.remove_network(id)
+    wpas.wait_disconnected()
+    id = wpas.connect("sta-dynamic", key_mgmt="SAE", psk="12345678",
+                      ieee80211w="2",
+                      mac_addr="1", scan_freq="2412")
+    addr2 = wpas.get_driver_status_field("addr")
+    if addr1 == addr2:
+        raise Exception("Random MAC address did not change")

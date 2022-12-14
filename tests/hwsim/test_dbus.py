@@ -6102,10 +6102,10 @@ def test_dbus_creds(dev, apdev):
     (bus, wpas_obj, path, if_obj) = prepare_dbus(dev[0])
     iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
 
-    args = {'domain': 'server.w1.fi',
+    args = {'domain': ['server.w1.fi','server2.w1.fi'],
             'realm': 'server.w1.fi',
-            'roaming_consortium': '50a9bf',
-            'required_roaming_consortium': '23bf50',
+            'home_ois': '50a9bf',
+            'required_home_ois': '23bf50',
             'eap': 'TTLS',
             'phase2': 'auth=MSCHAPV2',
             'username': 'user',
@@ -6118,6 +6118,8 @@ def test_dbus_creds(dev, apdev):
         if k == 'password':
             continue
         prop = dev[0].get_cred(0, k)
+        if isinstance(v, list):
+            v = '\n'.join(v)
         if prop != v:
             raise Exception('Credential add failed: %s does not match %s' % (prop, v))
 

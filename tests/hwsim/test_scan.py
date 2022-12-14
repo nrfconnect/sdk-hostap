@@ -91,6 +91,9 @@ def test_scan(dev, apdev):
     logger.info("Active single-channel scan on AP's operating channel")
     check_scan_retry(dev[0], "freq=2412 passive=0 use_id=1", bssid)
 
+    logger.info("Disable collocated 6 GHz scanning")
+    check_scan(dev[0], "freq=2457 non_coloc_6ghz=1 use_id=1")
+
 @remote_compatible
 def test_scan_tsf(dev, apdev):
     """Scan and TSF updates from Beacon/Probe Response frames"""
@@ -1028,7 +1031,7 @@ def _test_scan_dfs(dev, apdev, params):
 
     if "OK" not in dev[0].request("SCAN"):
         raise Exception("SCAN command failed")
-    ev = dev[0].wait_event(["CTRL-EVENT-SCAN-RESULTS"])
+    ev = dev[0].wait_event(["CTRL-EVENT-SCAN-RESULTS"], timeout=15)
     if ev is None:
         raise Exception("Scan did not complete")
 

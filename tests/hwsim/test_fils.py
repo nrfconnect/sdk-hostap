@@ -61,7 +61,7 @@ def test_fils_sk_full_auth(dev, apdev, params):
                    erp="1", scan_freq="2412")
     hwsim_utils.test_connectivity(dev[0], hapd)
 
-    ev = dev[0].wait_event(["WPA: Group rekeying completed"], timeout=2)
+    ev = dev[0].wait_event(["RSN: Group rekeying completed"], timeout=2)
     if ev is None:
         raise Exception("GTK rekey timed out")
     hwsim_utils.test_connectivity(dev[0], hapd)
@@ -110,7 +110,7 @@ def test_fils_sk_sha384_full_auth(dev, apdev, params):
                    erp="1", scan_freq="2412")
     hwsim_utils.test_connectivity(dev[0], hapd)
 
-    ev = dev[0].wait_event(["WPA: Group rekeying completed"], timeout=2)
+    ev = dev[0].wait_event(["RSN: Group rekeying completed"], timeout=2)
     if ev is None:
         raise Exception("GTK rekey timed out")
     hwsim_utils.test_connectivity(dev[0], hapd)
@@ -1422,12 +1422,13 @@ def run_fils_sk_pfs(dev, apdev, group, params):
     check_erp_capa(dev[0])
 
     tls = dev[0].request("GET tls_library")
-    if int(group) in [25]:
-        if not (tls.startswith("OpenSSL") and ("build=OpenSSL 1.0.2" in tls or "build=OpenSSL 1.1" in tls or "build=OpenSSL 3.0" in tls) and ("run=OpenSSL 1.0.2" in tls or "run=OpenSSL 1.1" in tls or "run=OpenSSL 3.0" in tls)):
-            raise HwsimSkip("EC group not supported")
-    if int(group) in [27, 28, 29, 30]:
-        if not (tls.startswith("OpenSSL") and ("build=OpenSSL 1.0.2" in tls or "build=OpenSSL 1.1" in tls or "build=OpenSSL 3.0" in tls) and ("run=OpenSSL 1.0.2" in tls or "run=OpenSSL 1.1" in tls or "run=OpenSSL 3.0" in tls)):
-            raise HwsimSkip("Brainpool EC group not supported")
+    if not tls.startswith("wolfSSL"):
+        if int(group) in [25]:
+            if not (tls.startswith("OpenSSL") and ("build=OpenSSL 1.0.2" in tls or "build=OpenSSL 1.1" in tls or "build=OpenSSL 3.0" in tls) and ("run=OpenSSL 1.0.2" in tls or "run=OpenSSL 1.1" in tls or "run=OpenSSL 3.0" in tls)):
+                raise HwsimSkip("EC group not supported")
+        if int(group) in [27, 28, 29, 30]:
+            if not (tls.startswith("OpenSSL") and ("build=OpenSSL 1.0.2" in tls or "build=OpenSSL 1.1" in tls or "build=OpenSSL 3.0" in tls) and ("run=OpenSSL 1.0.2" in tls or "run=OpenSSL 1.1" in tls or "run=OpenSSL 3.0" in tls)):
+                raise HwsimSkip("Brainpool EC group not supported")
 
     start_erp_as(msk_dump=os.path.join(params['logdir'], "msk.lst"))
 
@@ -1696,7 +1697,7 @@ def setup_fils_rekey(dev, apdev, params, wpa_ptk_rekey=0, wpa_group_rekey=0,
 def test_fils_auth_gtk_rekey(dev, apdev, params):
     """GTK rekeying after FILS authentication"""
     hapd = setup_fils_rekey(dev, apdev, params, wpa_group_rekey=1)
-    ev = dev[0].wait_event(["WPA: Group rekeying completed"], timeout=2)
+    ev = dev[0].wait_event(["RSN: Group rekeying completed"], timeout=2)
     if ev is None:
         raise Exception("GTK rekey timed out")
     hwsim_utils.test_connectivity(dev[0], hapd)

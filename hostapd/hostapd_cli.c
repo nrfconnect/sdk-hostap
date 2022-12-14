@@ -252,6 +252,13 @@ static int hostapd_cli_cmd_relog(struct wpa_ctrl *ctrl, int argc, char *argv[])
 }
 
 
+static int hostapd_cli_cmd_close_log(struct wpa_ctrl *ctrl, int argc,
+				     char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "CLOSE_LOG");
+}
+
+
 static int hostapd_cli_cmd_status(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc > 0 && os_strcmp(argv[0], "driver") == 0)
@@ -1169,7 +1176,7 @@ static int hostapd_cli_cmd_chan_switch(struct wpa_ctrl *ctrl,
 		       "arguments (count and freq)\n"
 		       "usage: <cs_count> <freq> [sec_channel_offset=] "
 		       "[center_freq1=] [center_freq2=] [bandwidth=] "
-		       "[blocktx] [ht|vht]\n");
+		       "[blocktx] [ht|vht|he|eht]\n");
 		return -1;
 	}
 
@@ -1205,6 +1212,13 @@ static int hostapd_cli_cmd_reload(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "RELOAD");
+}
+
+
+static int hostapd_cli_cmd_reload_bss(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "RELOAD_BSS");
 }
 
 
@@ -1478,7 +1492,7 @@ static int hostapd_cli_cmd_dpp_pkex_remove(struct wpa_ctrl *ctrl, int argc,
 static int hostapd_cli_cmd_dpp_controller_start(struct wpa_ctrl *ctrl, int argc,
 						char *argv[])
 {
-	return hostapd_cli_cmd(ctrl, "DPP_CONTROLLER_START", 1, argc, argv);
+	return hostapd_cli_cmd(ctrl, "DPP_CONTROLLER_START", 0, argc, argv);
 }
 
 
@@ -1503,6 +1517,15 @@ static int hostapd_cli_cmd_dpp_stop_chirp(struct wpa_ctrl *ctrl, int argc,
 }
 
 #endif /* CONFIG_DPP2 */
+
+
+#ifdef CONFIG_DPP3
+static int hostapd_cli_cmd_dpp_push_button(struct wpa_ctrl *ctrl, int argc,
+					   char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "DPP_PUSH_BUTTON", 1, argc, argv);
+}
+#endif /* CONFIG_DPP3 */
 #endif /* CONFIG_DPP */
 
 
@@ -1563,6 +1586,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= get MIB variables (dot1x, dot11, radius)" },
 	{ "relog", hostapd_cli_cmd_relog, NULL,
 	  "= reload/truncate debug log output file" },
+	{ "close_log", hostapd_cli_cmd_close_log, NULL,
+	  "= disable debug log output file" },
 	{ "status", hostapd_cli_cmd_status, NULL,
 	  "= show interface status info" },
 	{ "sta", hostapd_cli_cmd_sta, hostapd_complete_stations,
@@ -1661,6 +1686,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= enable hostapd on current interface" },
 	{ "reload", hostapd_cli_cmd_reload, NULL,
 	  "= reload configuration for current interface" },
+	{ "reload_bss", hostapd_cli_cmd_reload_bss, NULL,
+	  "= reload configuration for current BSS" },
 	{ "disable", hostapd_cli_cmd_disable, NULL,
 	  "= disable hostapd on current interface" },
 	{ "update_beacon", hostapd_cli_cmd_update_beacon, NULL,
@@ -1729,6 +1756,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "dpp_stop_chirp", hostapd_cli_cmd_dpp_stop_chirp, NULL,
 	  "= stop DPP chirp" },
 #endif /* CONFIG_DPP2 */
+#ifdef CONFIG_DPP3
+	{ "dpp_push_button", hostapd_cli_cmd_dpp_push_button, NULL,
+	  "= press DPP push button" },
+#endif /* CONFIG_DPP3 */
 #endif /* CONFIG_DPP */
 	{ "accept_acl", hostapd_cli_cmd_accept_macacl, NULL,
 	  "=Add/Delete/Show/Clear accept MAC ACL" },

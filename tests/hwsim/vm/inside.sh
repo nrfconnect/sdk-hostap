@@ -30,15 +30,14 @@ export HOME=/tmp
 sysctl kernel.panic_on_oops=1
 sysctl kernel.panic=1
 
-# get extra command line variables from /proc/cmdline
-TESTDIR=$(sed 's/.*testdir=\([^ ]*\) .*/\1/' /proc/cmdline)
-TIMEWARP=$(sed 's/.*timewarp=\([^ ]*\) .*/\1/' /proc/cmdline)
-EPATH=$(sed 's/.*EPATH=\([^ ]*\) .*/\1/' /proc/cmdline)
-TELNET=$(sed 's/.*TELNET=\([^ ]*\) .*/\1/' /proc/cmdline)
-ARGS=$(sed 's/.*ARGS=\([^ ]*\)\( \|$\).*/\1/' /proc/cmdline)
-LOGDIR=$(sed 's/.*LOGDIR=\([^ ]*\)\( \|$\).*/\1/' /proc/cmdline)
-
 mount --bind "$TESTDIR/vm/regdb/" /lib/firmware
+
+if [ "$MODULEDIR" != "" ] ; then
+	mount --bind $MODULEDIR /lib/modules
+fi
+
+# reload reg if (and only if) cfg80211.ko is already loaded
+iw reg reload || true
 
 # create /dev entries we need
 mknod -m 660 /dev/ttyS0 c 4 64
@@ -52,6 +51,11 @@ test -f /sys/class/misc/rfkill/dev && \
 ln -s /proc/self/fd/0 /dev/stdin
 ln -s /proc/self/fd/1 /dev/stdout
 ln -s /proc/self/fd/2 /dev/stderr
+
+# pretend we've initialized the RNG, we don't care here
+# about the actual quality of the randomness. The ioctl
+# is RNDADDTOENTCNT (at least on x86).
+PYTHONHASHSEED=0 python3 -c 'import fcntl; fd=open("/dev/random", "w"); fcntl.ioctl(fd.fileno(), 0x40045201, b"\x00\x01\x00\x00")'
 
 echo "VM has started up" > /dev/ttyS0
 
@@ -146,6 +150,7 @@ else
 	export LOGDIR=/tmp/logs
 	export DBFILE=$LOGDIR/results.db
 	export PREFILL_DB=y
+	export COMMITID
 
 	# some tests need CRDA, install a simple uevent helper
 	# and preload the 00 domain it will have asked for already

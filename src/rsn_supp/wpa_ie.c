@@ -191,8 +191,12 @@ static int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
 #ifdef CONFIG_SAE
 	} else if (key_mgmt == WPA_KEY_MGMT_SAE) {
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_SAE);
+	} else if (key_mgmt == WPA_KEY_MGMT_SAE_EXT_KEY) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_SAE_EXT_KEY);
 	} else if (key_mgmt == WPA_KEY_MGMT_FT_SAE) {
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_SAE);
+	} else if (key_mgmt == WPA_KEY_MGMT_FT_SAE_EXT_KEY) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_SAE_EXT_KEY);
 #endif /* CONFIG_SAE */
 	} else if (key_mgmt == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192) {
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192);
@@ -358,7 +362,8 @@ int wpa_gen_rsnxe(struct wpa_sm *sm, u8 *rsnxe, size_t rsnxe_len)
 	size_t flen;
 
 	if (wpa_key_mgmt_sae(sm->key_mgmt) &&
-	    (sm->sae_pwe == 1 || sm->sae_pwe == 2 || sm->sae_pk)) {
+	    (sm->sae_pwe == SAE_PWE_HASH_TO_ELEMENT ||
+	     sm->sae_pwe == SAE_PWE_BOTH || sm->sae_pk)) {
 		capab |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
 #ifdef CONFIG_SAE_PK
 		if (sm->sae_pk)
