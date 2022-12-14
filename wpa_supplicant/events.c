@@ -2931,7 +2931,6 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 	wpa_s->connection_set = 0;
 	if (data->assoc_info.req_ies && data->assoc_info.resp_ies) {
 		struct ieee802_11_elems req_elems, resp_elems;
-		memset(&resp_elems, 0, sizeof(struct ieee802_11_elems));
 
 		if (ieee802_11_parse_elems(data->assoc_info.req_ies,
 					   data->assoc_info.req_ies_len,
@@ -2952,22 +2951,6 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 				 BAND_2_4_GHZ);
 			wpa_s->connection_he = req_elems.he_capabilities &&
 				resp_elems.he_capabilities;
-			if (!wpa_s->connection_ht && !wpa_s->connection_vht &&
-			!wpa_s->connection_he) {
-				wpa_s->connection_a = 0;
-				wpa_s->connection_b = 0;
-				wpa_s->connection_g = 0;
-				if (wpas_freq_to_band(data->assoc_info.freq) == BAND_5_GHZ) {
-					wpa_s->connection_a = 1;
-				} else if (wpas_freq_to_band(data->assoc_info.freq) ==
-				BAND_2_4_GHZ) {
-					if (supp_rates_11b_only(&resp_elems)) {
-						wpa_s->connection_b = 1;
-					} else {
-						wpa_s->connection_g = 1;
-					}
-				}
-			}
 		}
 	}
 
