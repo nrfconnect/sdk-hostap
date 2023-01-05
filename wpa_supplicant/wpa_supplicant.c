@@ -10,6 +10,10 @@
  * functions for managing network connections.
  */
 
+#ifdef CONFIG_ZEPHYR
+#include <supp_events.h>
+#endif /* CONFIG_ZEPHYR */
+
 #include "includes.h"
 #ifdef CONFIG_MATCH_IFACE
 #include <net/if.h>
@@ -1023,6 +1027,9 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 			ssid && ssid->id_str ? ssid->id_str : "",
 			fils_hlp_sent ? " FILS_HLP_SENT" : "");
 #endif /* CONFIG_CTRL_IFACE || !CONFIG_NO_STDOUT_DEBUG */
+#ifdef CONFIG_ZEPHYR
+		send_wifi_mgmt_event(wpa_s->ifname, NET_EVENT_WIFI_CMD_CONNECT_RESULT, 0);
+#endif /* CONFIG_ZEPHYR */
 		wpas_clear_temp_disabled(wpa_s, ssid, 1);
 		wpa_s->consecutive_conn_failures = 0;
 		wpa_s->new_connection = 0;
