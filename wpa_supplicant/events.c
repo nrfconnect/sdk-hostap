@@ -6,6 +6,10 @@
  * See README for more details.
  */
 
+#ifdef CONFIG_ZEPHYR
+#include <supp_events.h>
+#endif /* CONFIG_ZEPHYR */
+
 #include "includes.h"
 
 #include "common.h"
@@ -3584,6 +3588,9 @@ static void wpa_supplicant_event_disassoc(struct wpa_supplicant *wpa_s,
 			" reason=%d%s",
 			MAC2STR(bssid), reason_code,
 			locally_generated ? " locally_generated=1" : "");
+#ifdef CONFIG_ZEPHYR
+		send_wifi_mgmt_event(wpa_s->ifname, NET_EVENT_WIFI_CMD_DISCONNECT_RESULT, 0);
+#endif /* CONFIG_ZEPHYR */
 	}
 }
 
