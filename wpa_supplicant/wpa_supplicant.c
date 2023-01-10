@@ -8611,6 +8611,17 @@ int wpas_disable_mac_addr_randomization(struct wpa_supplicant *wpa_s,
 	return 0;
 }
 
+int wpa_drv_get_conn_info(struct wpa_supplicant *wpa_s, struct wpa_conn_info *ci)
+{
+	int res;
+
+	if (!wpa_s->driver->get_conn_info)
+		return -1;
+
+	res = wpa_s->driver->get_conn_info(wpa_s->drv_priv, ci);
+
+	return res;
+}
 
 int wpa_drv_signal_poll(struct wpa_supplicant *wpa_s,
 			struct wpa_signal_info *si)
