@@ -2328,6 +2328,13 @@ struct wpa_signal_info {
 	int center_frq2;
 };
 
+
+struct wpa_conn_info {
+	unsigned short beacon_interval;
+	unsigned char dtim_period;
+};
+
+
 /**
  * struct wpa_channel_info - Information about the current channel
  * @frequency: Center frequency of the primary 20 MHz channel
@@ -3785,6 +3792,13 @@ struct wpa_driver_ops {
 	 * @signal_info: Connection info structure
 	 */
 	int (*signal_poll)(void *priv, struct wpa_signal_info *signal_info);
+
+	/**
+	 * beacon_poll - Get beacon info of current SSID
+	 * @priv: Private driver interface data
+	 * @beacon_info: Beacon info structure
+	 */
+	int (*get_conn_info)(void *priv, struct wpa_conn_info *conn_info);
 
 	/**
 	 * channel_info - Get parameters of the current operating channel

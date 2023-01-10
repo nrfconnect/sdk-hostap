@@ -1356,6 +1356,45 @@ static int nl80211_get_ext_capab(void *priv, enum wpa_driver_if_type type,
 	return 0;
 }
 
+static int wpa_drv_zep_get_conn_info(void *priv, struct wpa_conn_info *ci)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle\n", __func__);
+		goto out;
+	}
+
+	if (!ci) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!dev_ops) {
+		wpa_printf(MSG_ERROR, "%s:Failed to get config handle\n", __func__);
+		goto out;
+	}
+
+	if (dev_ops->get_conn_info) {
+		ret = dev_ops->get_conn_info(if_ctx->dev_priv, ci);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "%s: Failed to get connection info: %d\n", __func__, ret);
+			goto out;
+		}
+	} else {
+		wpa_printf(MSG_ERROR, "%s: Getting connection info is not supported\n", __func__);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
 const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.name = "zephyr",
 	.desc = "Zephyr wpa_supplicant driver",
@@ -1378,4 +1417,5 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.send_action = wpa_drv_zep_send_action,
 	.get_hw_feature_data = wpa_drv_get_hw_feature_data,
 	.get_ext_capab = nl80211_get_ext_capab,
+	.get_conn_info = wpa_drv_zep_get_conn_info,
 };

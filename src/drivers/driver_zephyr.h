@@ -218,6 +218,9 @@ struct zep_wpa_supp_dev_ops {
 
 	int (*get_capa)(void *if_priv,
 			struct wpa_driver_capa *capa);
+
+	int (*get_conn_info)(void *if_priv,
+			struct wpa_conn_info *info);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
