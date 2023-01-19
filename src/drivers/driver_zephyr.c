@@ -122,6 +122,7 @@ void wpa_drv_zep_event_proc_scan_done(struct zep_drv_if_ctx *if_ctx,
 			     if_ctx->supp_if_ctx);
 
 	if_ctx->scan_res2_get_in_prog = false;
+	k_sem_give(&if_ctx->drv_resp_sem);
 
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_SCAN_RESULTS,
@@ -158,13 +159,10 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 
 	if_ctx->scan_res2->res = tmp;
 
-	if_ctx->scan_res2_get_in_prog = more_res;
-
-	return;
 err:
-	/* Ignore failures except the last */
 	if (!more_res) {
 		if_ctx->scan_res2_get_in_prog = false;
+		k_sem_give(&if_ctx->drv_resp_sem);
 	}
 }
 
@@ -705,6 +703,7 @@ struct hostapd_hw_modes *wpa_drv_get_hw_feature_data(void *priv,
 		return NULL;
 	}
 
+	k_sem_reset(&if_ctx->drv_resp_sem);
 	k_sem_take(&if_ctx->drv_resp_sem, K_SECONDS(GET_WIPHY_TIMEOUT));
 
 	if (!result.modes) {
@@ -926,7 +925,6 @@ struct wpa_scan_results *wpa_drv_zep_get_scan_results2(void *priv)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
-	unsigned int i = 0;
 	int ret = -1;
 
 	if (!priv) {
@@ -961,14 +959,10 @@ struct wpa_scan_results *wpa_drv_zep_get_scan_results2(void *priv)
 
 	if_ctx->scan_res2_get_in_prog = true;
 
-	/* Wait for the device to populate the scan results */
-	while ((if_ctx->scan_res2_get_in_prog) && (i < SCAN_TIMEOUT)) {
-		k_yield();
-		os_sleep(1, 0);
-		i++;
-	}
+	k_sem_reset(&if_ctx->drv_resp_sem);
+	k_sem_take(&if_ctx->drv_resp_sem, K_SECONDS(SCAN_TIMEOUT));
 
-	if (i == SCAN_TIMEOUT) {
+	if (if_ctx->scan_res2_get_in_prog) {
 		wpa_printf(MSG_ERROR, "%s: Timed out waiting for scan results\n", __func__);
 		ret = -1;
 		goto out;
