@@ -11484,7 +11484,6 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		return NULL;
 	}
 
-	memset(reply, '\0', reply_size);
 	os_memcpy(reply, "OK\n", 3);
 	reply_len = 3;
 
