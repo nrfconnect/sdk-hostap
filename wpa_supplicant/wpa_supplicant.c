@@ -6836,7 +6836,6 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 		return -1;
 	wpa_sm_set_eapol(wpa_s->wpa, wpa_s->eapol);
 
-#ifndef CONFIG_ZEPHYR
 	wpa_s->ctrl_iface = wpa_supplicant_ctrl_iface_init(wpa_s);
 	if (wpa_s->ctrl_iface == NULL) {
 		wpa_printf(MSG_ERROR,
@@ -6850,7 +6849,6 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 			   wpa_s->conf->ctrl_interface);
 		return -1;
 	}
-#endif
 
 	wpa_s->gas = gas_query_init(wpa_s);
 	if (wpa_s->gas == NULL) {
