@@ -36,11 +36,6 @@ static DEFINE_DL_LIST(creds); /* struct cli_txt_entry */
 static DEFINE_DL_LIST(stations); /* struct cli_txt_entry */
 #endif /* CONFIG_AP */
 
-static void wpa_cli_msg_cb(char *msg, size_t len)
-{
-	wpa_printf(MSG_INFO, "%s\n", msg);
-}
-
 static int wpa_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd, int min_args,
 		       int argc, char *argv[])
 {
@@ -72,9 +67,213 @@ out:
 }
 
 
-static int wpa_cli_cmd_ifname(struct wpa_ctrl *ctrl, int argc, char *argv[])
+static const char *network_fields[] = {
+	"ssid", "scan_ssid", "bssid", "bssid_ignore",
+	"bssid_accept", "psk", "proto", "key_mgmt",
+	"bg_scan_period", "pairwise", "group", "auth_alg", "scan_freq",
+	"freq_list", "max_oper_chwidth", "ht40", "vht", "vht_center_freq1",
+	"vht_center_freq2", "ht", "edmg",
+#ifdef IEEE8021X_EAPOL
+	"eap", "identity", "anonymous_identity", "password", "ca_cert",
+	"ca_path", "client_cert", "private_key", "private_key_passwd",
+	"dh_file", "subject_match", "altsubject_match",
+	"check_cert_subject",
+	"domain_suffix_match", "domain_match", "ca_cert2", "ca_path2",
+	"client_cert2", "private_key2", "private_key2_passwd",
+	"dh_file2", "subject_match2", "altsubject_match2",
+	"check_cert_subject2",
+	"domain_suffix_match2", "domain_match2", "phase1", "phase2",
+	"pcsc", "pin", "engine_id", "key_id", "cert_id", "ca_cert_id",
+	"pin2", "engine2_id", "key2_id", "cert2_id", "ca_cert2_id",
+	"engine", "engine2", "eapol_flags", "sim_num",
+	"openssl_ciphers", "erp",
+#endif /* IEEE8021X_EAPOL */
+	"wep_key0", "wep_key1", "wep_key2", "wep_key3",
+	"wep_tx_keyidx", "priority",
+#ifdef IEEE8021X_EAPOL
+	"eap_workaround", "pac_file", "fragment_size", "ocsp",
+#endif /* IEEE8021X_EAPOL */
+	"mode",
+	"proactive_key_caching", "disabled", "id_str",
+	"ieee80211w",
+	"mixed_cell", "frequency", "fixed_freq",
+#ifdef CONFIG_MESH
+	"no_auto_peer", "mesh_rssi_threshold",
+	"mesh_basic_rates", "dot11MeshMaxRetries",
+	"dot11MeshRetryTimeout", "dot11MeshConfirmTimeout",
+	"dot11MeshHoldingTimeout",
+#endif /* CONFIG_MESH */
+	"wpa_ptk_rekey", "bgscan", "ignore_broadcast_ssid",
+	"wpa_deny_ptk0_rekey",
+	"enable_edmg", "edmg_channel",
+#ifdef CONFIG_P2P
+	"go_p2p_dev_addr", "p2p_client_list", "psk_list",
+#endif /* CONFIG_P2P */
+#ifdef CONFIG_HT_OVERRIDES
+	"disable_ht", "disable_ht40", "disable_sgi", "disable_ldpc",
+	"ht40_intolerant", "disable_max_amsdu", "ampdu_factor",
+	"ampdu_density", "ht_mcs", "rx_stbc", "tx_stbc",
+#endif /* CONFIG_HT_OVERRIDES */
+#ifdef CONFIG_VHT_OVERRIDES
+	"disable_vht", "vht_capa", "vht_capa_mask", "vht_rx_mcs_nss_1",
+	"vht_rx_mcs_nss_2", "vht_rx_mcs_nss_3", "vht_rx_mcs_nss_4",
+	"vht_rx_mcs_nss_5", "vht_rx_mcs_nss_6", "vht_rx_mcs_nss_7",
+	"vht_rx_mcs_nss_8", "vht_tx_mcs_nss_1", "vht_tx_mcs_nss_2",
+	"vht_tx_mcs_nss_3", "vht_tx_mcs_nss_4", "vht_tx_mcs_nss_5",
+	"vht_tx_mcs_nss_6", "vht_tx_mcs_nss_7", "vht_tx_mcs_nss_8",
+#endif /* CONFIG_VHT_OVERRIDES */
+#ifdef CONFIG_HE_OVERRIDES
+	"disable_he",
+#endif /* CONFIG_HE_OVERRIDES */
+	"ap_max_inactivity", "dtim_period", "beacon_int",
+#ifdef CONFIG_MACSEC
+	"macsec_policy",
+	"macsec_integ_only",
+	"macsec_replay_protect",
+	"macsec_replay_window",
+	"macsec_port",
+	"mka_priority",
+#endif /* CONFIG_MACSEC */
+#ifdef CONFIG_HS20
+	"update_identifier",
+#endif /* CONFIG_HS20 */
+	"mac_addr", "pbss", "wps_disabled"
+};
+
+
+static char ** wpa_cli_complete_network(const char *str, int pos)
 {
-	return wpa_ctrl_command(ctrl, "IFNAME");
+	int arg = get_cmd_arg_num(str, pos);
+	int i, num_fields = ARRAY_SIZE(network_fields);
+	char **res = NULL;
+
+	switch (arg) {
+	case 1:
+		res = cli_txt_list_array(&networks);
+		break;
+	case 2:
+		res = os_calloc(num_fields + 1, sizeof(char *));
+		if (res == NULL)
+			return NULL;
+		for (i = 0; i < num_fields; i++) {
+			res[i] = os_strdup(network_fields[i]);
+			if (res[i] == NULL)
+				break;
+		}
+	}
+	return res;
+}
+
+static char ** wpa_cli_complete_network_id(const char *str, int pos)
+{
+	int arg = get_cmd_arg_num(str, pos);
+	if (arg == 1)
+		return cli_txt_list_array(&networks);
+	return NULL;
+}
+
+static void wpa_cli_show_network_variables(void)
+{
+	wpa_printf(MSG_INFO, "set_network variables:\n"
+	       "  ssid (network name, SSID)\n"
+	       "  psk (WPA passphrase or pre-shared key)\n"
+	       "  key_mgmt (key management protocol)\n"
+	       "  identity (EAP identity)\n"
+	       "  password (EAP password)\n"
+	       "  ...\n"
+	       "\n"
+	       "Note: Values are entered in the same format as the "
+	       "configuration file is using,\n"
+	       "i.e., strings values need to be inside double quotation "
+	       "marks.\n"
+	       "For example: set_network 1 ssid \"network name\"\n"
+	       "\n"
+	       "Please see wpa_supplicant.conf documentation for full list "
+	       "of\navailable variables.\n");
+}
+
+
+static int wpa_cli_cmd_set_network(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	if (argc == 0) {
+		wpa_cli_show_network_variables();
+		return 0;
+	}
+
+	if (argc < 3) {
+		wpa_printf(MSG_INFO, "Invalid SET_NETWORK command: needs three arguments\n"
+		       "(network id, variable name, and value)\n");
+		return -1;
+	}
+
+	return wpa_cli_cmd(ctrl, "SET_NETWORK", 3, argc, argv);
+}
+
+
+static int wpa_cli_cmd_get_network(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	if (argc == 0) {
+		wpa_cli_show_network_variables();
+		return 0;
+	}
+
+	if (argc < 2) {
+		wpa_printf(MSG_INFO, "Invalid GET_NETWORK command: needs two arguments\n"
+		       "(network id and variable name)\n");
+		return -1;
+	}
+
+	return wpa_cli_cmd(ctrl, "GET_NETWORK", 2, argc, argv);
+}
+
+static int wpa_cli_cmd_list_networks(struct wpa_ctrl *ctrl, int argc,
+				     char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "LIST_NETWORKS", 0, argc, argv);
+}
+
+
+static int wpa_cli_cmd_select_network(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "SELECT_NETWORK", 1, argc, argv);
+}
+
+
+static int wpa_cli_cmd_enable_network(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "ENABLE_NETWORK", 1, argc, argv);
+}
+
+
+static int wpa_cli_cmd_disable_network(struct wpa_ctrl *ctrl, int argc,
+				       char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "DISABLE_NETWORK", 1, argc, argv);
+}
+
+
+static int wpa_cli_cmd_add_network(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "ADD_NETWORK");
+}
+
+
+static int wpa_cli_cmd_remove_network(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "REMOVE_NETWORK", 1, argc, argv);
+}
+
+
+static int wpa_cli_cmd_disconnect(struct wpa_ctrl *ctrl, int argc,
+				  char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "DISCONNECT");
 }
 
 
@@ -87,6 +286,18 @@ static int wpa_cli_cmd_status(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	if (argc > 0 && os_strcmp(argv[0], "driver") == 0)
 		return wpa_ctrl_command(ctrl, "STATUS-DRIVER");
 	return wpa_ctrl_command(ctrl, "STATUS");
+}
+
+
+#if !defined(CONFIG_ZEPHYR) || (defined(CONFIG_ZEPHYR) && defined(CONFIG_WPA_CLI))
+static void wpa_cli_msg_cb(char *msg, size_t len)
+{
+	wpa_printf(MSG_INFO, "%s\n", msg);
+}
+
+static int wpa_cli_cmd_ifname(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "IFNAME");
 }
 
 
@@ -1039,212 +1250,6 @@ static int wpa_cli_cmd_log_level(struct wpa_ctrl *ctrl, int argc, char *argv[])
 }
 
 
-static int wpa_cli_cmd_list_networks(struct wpa_ctrl *ctrl, int argc,
-				     char *argv[])
-{
-	return wpa_cli_cmd(ctrl, "LIST_NETWORKS", 0, argc, argv);
-}
-
-
-static int wpa_cli_cmd_select_network(struct wpa_ctrl *ctrl, int argc,
-				      char *argv[])
-{
-	return wpa_cli_cmd(ctrl, "SELECT_NETWORK", 1, argc, argv);
-}
-
-
-static int wpa_cli_cmd_enable_network(struct wpa_ctrl *ctrl, int argc,
-				      char *argv[])
-{
-	return wpa_cli_cmd(ctrl, "ENABLE_NETWORK", 1, argc, argv);
-}
-
-
-static int wpa_cli_cmd_disable_network(struct wpa_ctrl *ctrl, int argc,
-				       char *argv[])
-{
-	return wpa_cli_cmd(ctrl, "DISABLE_NETWORK", 1, argc, argv);
-}
-
-
-static int wpa_cli_cmd_add_network(struct wpa_ctrl *ctrl, int argc,
-				   char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "ADD_NETWORK");
-}
-
-
-static int wpa_cli_cmd_remove_network(struct wpa_ctrl *ctrl, int argc,
-				      char *argv[])
-{
-	return wpa_cli_cmd(ctrl, "REMOVE_NETWORK", 1, argc, argv);
-}
-
-
-static void wpa_cli_show_network_variables(void)
-{
-	wpa_printf(MSG_INFO, "set_network variables:\n"
-	       "  ssid (network name, SSID)\n"
-	       "  psk (WPA passphrase or pre-shared key)\n"
-	       "  key_mgmt (key management protocol)\n"
-	       "  identity (EAP identity)\n"
-	       "  password (EAP password)\n"
-	       "  ...\n"
-	       "\n"
-	       "Note: Values are entered in the same format as the "
-	       "configuration file is using,\n"
-	       "i.e., strings values need to be inside double quotation "
-	       "marks.\n"
-	       "For example: set_network 1 ssid \"network name\"\n"
-	       "\n"
-	       "Please see wpa_supplicant.conf documentation for full list "
-	       "of\navailable variables.\n");
-}
-
-
-static int wpa_cli_cmd_set_network(struct wpa_ctrl *ctrl, int argc,
-				   char *argv[])
-{
-	if (argc == 0) {
-		wpa_cli_show_network_variables();
-		return 0;
-	}
-
-	if (argc < 3) {
-		wpa_printf(MSG_INFO, "Invalid SET_NETWORK command: needs three arguments\n"
-		       "(network id, variable name, and value)\n");
-		return -1;
-	}
-
-	return wpa_cli_cmd(ctrl, "SET_NETWORK", 3, argc, argv);
-}
-
-
-static int wpa_cli_cmd_get_network(struct wpa_ctrl *ctrl, int argc,
-				   char *argv[])
-{
-	if (argc == 0) {
-		wpa_cli_show_network_variables();
-		return 0;
-	}
-
-	if (argc < 2) {
-		wpa_printf(MSG_INFO, "Invalid GET_NETWORK command: needs two arguments\n"
-		       "(network id and variable name)\n");
-		return -1;
-	}
-
-	return wpa_cli_cmd(ctrl, "GET_NETWORK", 2, argc, argv);
-}
-
-
-static const char *network_fields[] = {
-	"ssid", "scan_ssid", "bssid", "bssid_ignore",
-	"bssid_accept", "psk", "proto", "key_mgmt",
-	"bg_scan_period", "pairwise", "group", "auth_alg", "scan_freq",
-	"freq_list", "max_oper_chwidth", "ht40", "vht", "vht_center_freq1",
-	"vht_center_freq2", "ht", "edmg",
-#ifdef IEEE8021X_EAPOL
-	"eap", "identity", "anonymous_identity", "password", "ca_cert",
-	"ca_path", "client_cert", "private_key", "private_key_passwd",
-	"dh_file", "subject_match", "altsubject_match",
-	"check_cert_subject",
-	"domain_suffix_match", "domain_match", "ca_cert2", "ca_path2",
-	"client_cert2", "private_key2", "private_key2_passwd",
-	"dh_file2", "subject_match2", "altsubject_match2",
-	"check_cert_subject2",
-	"domain_suffix_match2", "domain_match2", "phase1", "phase2",
-	"pcsc", "pin", "engine_id", "key_id", "cert_id", "ca_cert_id",
-	"pin2", "engine2_id", "key2_id", "cert2_id", "ca_cert2_id",
-	"engine", "engine2", "eapol_flags", "sim_num",
-	"openssl_ciphers", "erp",
-#endif /* IEEE8021X_EAPOL */
-	"wep_key0", "wep_key1", "wep_key2", "wep_key3",
-	"wep_tx_keyidx", "priority",
-#ifdef IEEE8021X_EAPOL
-	"eap_workaround", "pac_file", "fragment_size", "ocsp",
-#endif /* IEEE8021X_EAPOL */
-	"mode",
-	"proactive_key_caching", "disabled", "id_str",
-	"ieee80211w",
-	"mixed_cell", "frequency", "fixed_freq",
-#ifdef CONFIG_MESH
-	"no_auto_peer", "mesh_rssi_threshold",
-	"mesh_basic_rates", "dot11MeshMaxRetries",
-	"dot11MeshRetryTimeout", "dot11MeshConfirmTimeout",
-	"dot11MeshHoldingTimeout",
-#endif /* CONFIG_MESH */
-	"wpa_ptk_rekey", "bgscan", "ignore_broadcast_ssid",
-	"wpa_deny_ptk0_rekey",
-	"enable_edmg", "edmg_channel",
-#ifdef CONFIG_P2P
-	"go_p2p_dev_addr", "p2p_client_list", "psk_list",
-#endif /* CONFIG_P2P */
-#ifdef CONFIG_HT_OVERRIDES
-	"disable_ht", "disable_ht40", "disable_sgi", "disable_ldpc",
-	"ht40_intolerant", "disable_max_amsdu", "ampdu_factor",
-	"ampdu_density", "ht_mcs", "rx_stbc", "tx_stbc",
-#endif /* CONFIG_HT_OVERRIDES */
-#ifdef CONFIG_VHT_OVERRIDES
-	"disable_vht", "vht_capa", "vht_capa_mask", "vht_rx_mcs_nss_1",
-	"vht_rx_mcs_nss_2", "vht_rx_mcs_nss_3", "vht_rx_mcs_nss_4",
-	"vht_rx_mcs_nss_5", "vht_rx_mcs_nss_6", "vht_rx_mcs_nss_7",
-	"vht_rx_mcs_nss_8", "vht_tx_mcs_nss_1", "vht_tx_mcs_nss_2",
-	"vht_tx_mcs_nss_3", "vht_tx_mcs_nss_4", "vht_tx_mcs_nss_5",
-	"vht_tx_mcs_nss_6", "vht_tx_mcs_nss_7", "vht_tx_mcs_nss_8",
-#endif /* CONFIG_VHT_OVERRIDES */
-#ifdef CONFIG_HE_OVERRIDES
-	"disable_he",
-#endif /* CONFIG_HE_OVERRIDES */
-	"ap_max_inactivity", "dtim_period", "beacon_int",
-#ifdef CONFIG_MACSEC
-	"macsec_policy",
-	"macsec_integ_only",
-	"macsec_replay_protect",
-	"macsec_replay_window",
-	"macsec_port",
-	"mka_priority",
-#endif /* CONFIG_MACSEC */
-#ifdef CONFIG_HS20
-	"update_identifier",
-#endif /* CONFIG_HS20 */
-	"mac_addr", "pbss", "wps_disabled"
-};
-
-
-static char ** wpa_cli_complete_network(const char *str, int pos)
-{
-	int arg = get_cmd_arg_num(str, pos);
-	int i, num_fields = ARRAY_SIZE(network_fields);
-	char **res = NULL;
-
-	switch (arg) {
-	case 1:
-		res = cli_txt_list_array(&networks);
-		break;
-	case 2:
-		res = os_calloc(num_fields + 1, sizeof(char *));
-		if (res == NULL)
-			return NULL;
-		for (i = 0; i < num_fields; i++) {
-			res[i] = os_strdup(network_fields[i]);
-			if (res[i] == NULL)
-				break;
-		}
-	}
-	return res;
-}
-
-
-static char ** wpa_cli_complete_network_id(const char *str, int pos)
-{
-	int arg = get_cmd_arg_num(str, pos);
-	if (arg == 1)
-		return cli_txt_list_array(&networks);
-	return NULL;
-}
-
-
 static int wpa_cli_cmd_dup_network(struct wpa_ctrl *ctrl, int argc,
 				   char *argv[])
 {
@@ -1366,13 +1371,6 @@ static int wpa_cli_cmd_get_cred(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	}
 
 	return wpa_cli_cmd(ctrl, "GET_CRED", 2, argc, argv);
-}
-
-
-static int wpa_cli_cmd_disconnect(struct wpa_ctrl *ctrl, int argc,
-				  char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "DISCONNECT");
 }
 
 
@@ -2933,6 +2931,8 @@ static int wpa_cli_cmd_dscp_query(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return wpa_cli_cmd(ctrl, "DSCP_QUERY", 1, argc, argv);
 }
 
+#endif /* !CONFIG_ZEPHYR || (CONFIG_ZEPHYR && CONFIG_WPA_CLI)*/
+
 
 enum wpa_cli_cmd_flags {
 	cli_cmd_flag_none		= 0x00,
@@ -2950,7 +2950,41 @@ struct wpa_cli_cmd {
 static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "status", wpa_cli_cmd_status, NULL,
 	  cli_cmd_flag_none,
-	  "[verbose] = get current WPA/EAPOL/EAP status" },
+	  "[verbose] = get current WPA/EAPOL/EAP status" },		
+	{ "set_network", wpa_cli_cmd_set_network, wpa_cli_complete_network,
+	  cli_cmd_flag_sensitive,
+	  "<network id> <variable> <value> = set network variables (shows\n"
+	  "  list of variables when run without arguments)" },
+	{ "get_network", wpa_cli_cmd_get_network, wpa_cli_complete_network,
+	  cli_cmd_flag_none,
+	  "<network id> <variable> = get network variables" },
+	{ "list_networks", wpa_cli_cmd_list_networks, NULL,
+	  cli_cmd_flag_none,
+	  "= list configured networks" },
+	{ "select_network", wpa_cli_cmd_select_network,
+	  wpa_cli_complete_network_id,
+	  cli_cmd_flag_none,
+	  "<network id> = select a network (disable others)" },
+	{ "enable_network", wpa_cli_cmd_enable_network,
+	  wpa_cli_complete_network_id,
+	  cli_cmd_flag_none,
+	  "<network id> = enable a network" },
+	{ "disable_network", wpa_cli_cmd_disable_network,
+	  wpa_cli_complete_network_id,
+	  cli_cmd_flag_none,
+	  "<network id> = disable a network" },
+	{ "add_network", wpa_cli_cmd_add_network, NULL,
+	  cli_cmd_flag_none,
+	  "= add a network" },
+	{ "remove_network", wpa_cli_cmd_remove_network,
+	  wpa_cli_complete_network_id,
+	  cli_cmd_flag_none,
+	  "<network id> = remove a network" },
+	{ "disconnect", wpa_cli_cmd_disconnect, NULL,
+	  cli_cmd_flag_none,
+	  "= disconnect and wait for reassociate/reconnect command before\n"
+	  "  connecting" },
+#if !defined(CONFIG_ZEPHYR) || (defined(CONFIG_ZEPHYR) && defined(CONFIG_WPA_CLI))
 	{ "ifname", wpa_cli_cmd_ifname, NULL,
 	  cli_cmd_flag_none,
 	  "= get current interface name" },
@@ -3058,35 +3092,6 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  cli_cmd_flag_none,
 	  "<level> [<timestamp>] = update the log level/timestamp\n"
 	  "log_level = display the current log level and log options" },
-	{ "list_networks", wpa_cli_cmd_list_networks, NULL,
-	  cli_cmd_flag_none,
-	  "= list configured networks" },
-	{ "select_network", wpa_cli_cmd_select_network,
-	  wpa_cli_complete_network_id,
-	  cli_cmd_flag_none,
-	  "<network id> = select a network (disable others)" },
-	{ "enable_network", wpa_cli_cmd_enable_network,
-	  wpa_cli_complete_network_id,
-	  cli_cmd_flag_none,
-	  "<network id> = enable a network" },
-	{ "disable_network", wpa_cli_cmd_disable_network,
-	  wpa_cli_complete_network_id,
-	  cli_cmd_flag_none,
-	  "<network id> = disable a network" },
-	{ "add_network", wpa_cli_cmd_add_network, NULL,
-	  cli_cmd_flag_none,
-	  "= add a network" },
-	{ "remove_network", wpa_cli_cmd_remove_network,
-	  wpa_cli_complete_network_id,
-	  cli_cmd_flag_none,
-	  "<network id> = remove a network" },
-	{ "set_network", wpa_cli_cmd_set_network, wpa_cli_complete_network,
-	  cli_cmd_flag_sensitive,
-	  "<network id> <variable> <value> = set network variables (shows\n"
-	  "  list of variables when run without arguments)" },
-	{ "get_network", wpa_cli_cmd_get_network, wpa_cli_complete_network,
-	  cli_cmd_flag_none,
-	  "<network id> <variable> = get network variables" },
 	{ "dup_network", wpa_cli_cmd_dup_network, wpa_cli_complete_dup_network,
 	  cli_cmd_flag_none,
 	  "<src network id> <dst network id> <variable> = duplicate network variables"
@@ -3109,10 +3114,6 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "save_config", wpa_cli_cmd_save_config, NULL,
 	  cli_cmd_flag_none,
 	  "= save the current configuration" },
-	{ "disconnect", wpa_cli_cmd_disconnect, NULL,
-	  cli_cmd_flag_none,
-	  "= disconnect and wait for reassociate/reconnect command before\n"
-	  "  connecting" },
 	{ "reconnect", wpa_cli_cmd_reconnect, NULL,
 	  cli_cmd_flag_none,
 	  "= like reassociate, but only takes effect if already disconnected"
@@ -3634,6 +3635,7 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "dscp_query", wpa_cli_cmd_dscp_query, NULL,
 	  cli_cmd_flag_none,
 	  "wildcard/domain_name=<string> = Send DSCP Query" },
+#endif  /* !CONFIG_ZEPHYR || (CONFIG_ZEPHYR && CONFIG_WPA_CLI)*/
 	{ NULL, NULL, NULL, cli_cmd_flag_none, NULL }
 };
 
