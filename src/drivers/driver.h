@@ -2332,6 +2332,7 @@ struct wpa_signal_info {
 struct wpa_conn_info {
 	unsigned short beacon_interval;
 	unsigned char dtim_period;
+	bool twt_capable;
 };
 
 
