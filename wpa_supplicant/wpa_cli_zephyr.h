@@ -35,4 +35,10 @@ int z_wpa_ctrl_add_network(struct add_network_resp *resp);
 int z_wpa_ctrl_signal_poll(struct signal_poll_resp *resp);
 int z_wpa_ctrl_status(struct status_resp *resp);
 
+/* Global control interface */
+int z_global_wpa_ctrl_init(void);
+void z_global_wpa_ctrl_deinit(void);
+int z_wpa_global_ctrl_zephyr_cmd(int argc, const char *argv[]);
+int z_wpa_cli_global_cmd_v(const char *fmt, ...);
+
 #endif /* __WPA_CLI_ZEPHYR_H_ */

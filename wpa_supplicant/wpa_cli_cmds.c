@@ -289,6 +289,53 @@ static int wpa_cli_cmd_status(struct wpa_ctrl *ctrl, int argc, char *argv[])
 }
 
 
+
+static int wpa_cli_cmd_interface_add(struct wpa_ctrl *ctrl, int argc,
+				     char *argv[])
+{
+	char cmd[256];
+	int res;
+
+	if (argc < 1) {
+		wpa_printf(MSG_INFO, "Invalid INTERFACE_ADD command: needs at least one "
+		       "argument (interface name)\n"
+		       "All arguments: ifname confname driver ctrl_interface "
+		       "driver_param bridge_name [create]\n");
+		return -1;
+	}
+
+	/*
+	 * INTERFACE_ADD <ifname>TAB<confname>TAB<driver>TAB<ctrl_interface>TAB
+	 * <driver_param>TAB<bridge_name>[TAB<create>[TAB<type>]]
+	 */
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "INTERFACE_ADD %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
+			  argv[0],
+			  argc > 1 ? argv[1] : "", argc > 2 ? argv[2] : "",
+			  argc > 3 ? argv[3] : "", argc > 4 ? argv[4] : "",
+			  argc > 5 ? argv[5] : "", argc > 6 ? argv[6] : "",
+			  argc > 7 ? argv[7] : "");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	cmd[sizeof(cmd) - 1] = '\0';
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+
+static int wpa_cli_cmd_interface_remove(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "INTERFACE_REMOVE", 1, argc, argv);
+}
+
+
+static int wpa_cli_cmd_interface_list(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "INTERFACE_LIST");
+}
+
+
 #if !defined(CONFIG_ZEPHYR) || (defined(CONFIG_ZEPHYR) && defined(CONFIG_WPA_CLI))
 static void wpa_cli_msg_cb(char *msg, size_t len)
 {
@@ -1531,52 +1578,6 @@ static int wpa_cli_cmd_terminate(struct wpa_ctrl *ctrl, int argc,
 				 char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "TERMINATE");
-}
-
-
-static int wpa_cli_cmd_interface_add(struct wpa_ctrl *ctrl, int argc,
-				     char *argv[])
-{
-	char cmd[256];
-	int res;
-
-	if (argc < 1) {
-		wpa_printf(MSG_INFO, "Invalid INTERFACE_ADD command: needs at least one "
-		       "argument (interface name)\n"
-		       "All arguments: ifname confname driver ctrl_interface "
-		       "driver_param bridge_name [create]\n");
-		return -1;
-	}
-
-	/*
-	 * INTERFACE_ADD <ifname>TAB<confname>TAB<driver>TAB<ctrl_interface>TAB
-	 * <driver_param>TAB<bridge_name>[TAB<create>[TAB<type>]]
-	 */
-	res = os_snprintf(cmd, sizeof(cmd),
-			  "INTERFACE_ADD %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
-			  argv[0],
-			  argc > 1 ? argv[1] : "", argc > 2 ? argv[2] : "",
-			  argc > 3 ? argv[3] : "", argc > 4 ? argv[4] : "",
-			  argc > 5 ? argv[5] : "", argc > 6 ? argv[6] : "",
-			  argc > 7 ? argv[7] : "");
-	if (os_snprintf_error(sizeof(cmd), res))
-		return -1;
-	cmd[sizeof(cmd) - 1] = '\0';
-	return wpa_ctrl_command(ctrl, cmd);
-}
-
-
-static int wpa_cli_cmd_interface_remove(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	return wpa_cli_cmd(ctrl, "INTERFACE_REMOVE", 1, argc, argv);
-}
-
-
-static int wpa_cli_cmd_interface_list(struct wpa_ctrl *ctrl, int argc,
-				      char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "INTERFACE_LIST");
 }
 
 
@@ -2984,6 +2985,19 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  cli_cmd_flag_none,
 	  "= disconnect and wait for reassociate/reconnect command before\n"
 	  "  connecting" },
+	{ "interface_add", wpa_cli_cmd_interface_add, NULL,
+	  cli_cmd_flag_none,
+	  "<ifname> <confname> <driver> <ctrl_interface> <driver_param>\n"
+	  "  <bridge_name> <create> <type> = adds new interface, all "
+	  "parameters but\n"
+	  "  <ifname> are optional. Supported types are station ('sta') and "
+	  "AP ('ap')" },
+	{ "interface_remove", wpa_cli_cmd_interface_remove, NULL,
+	  cli_cmd_flag_none,
+	  "<ifname> = removes the interface" },
+	{ "interface_list", wpa_cli_cmd_interface_list, NULL,
+	  cli_cmd_flag_none,
+	  "= list available interfaces" },
 #if !defined(CONFIG_ZEPHYR) || (defined(CONFIG_ZEPHYR) && defined(CONFIG_WPA_CLI))
 	{ "ifname", wpa_cli_cmd_ifname, NULL,
 	  cli_cmd_flag_none,
@@ -3140,19 +3154,6 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "terminate", wpa_cli_cmd_terminate, NULL,
 	  cli_cmd_flag_none,
 	  "= terminate wpa_supplicant" },
-	{ "interface_add", wpa_cli_cmd_interface_add, NULL,
-	  cli_cmd_flag_none,
-	  "<ifname> <confname> <driver> <ctrl_interface> <driver_param>\n"
-	  "  <bridge_name> <create> <type> = adds new interface, all "
-	  "parameters but\n"
-	  "  <ifname> are optional. Supported types are station ('sta') and "
-	  "AP ('ap')" },
-	{ "interface_remove", wpa_cli_cmd_interface_remove, NULL,
-	  cli_cmd_flag_none,
-	  "<ifname> = removes the interface" },
-	{ "interface_list", wpa_cli_cmd_interface_list, NULL,
-	  cli_cmd_flag_none,
-	  "= list available interfaces" },
 	{ "ap_scan", wpa_cli_cmd_ap_scan, NULL,
 	  cli_cmd_flag_none,
 	  "<value> = set ap_scan parameter" },
