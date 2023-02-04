@@ -96,9 +96,8 @@ static int wpa_cli_open_connection(struct wpa_supplicant *wpa_s)
 {
 	ctrl_conn = wpa_ctrl_open(wpa_s->ctrl_iface->sock_pair[0]);
 	if (ctrl_conn == NULL) {
-		wpa_printf(MSG_ERROR, "Failed to open control connection to "
-			   "%d - %s", wpa_s->ctrl_iface->sock_pair[0],
-			   strerror(errno));
+		wpa_printf(MSG_ERROR, "Failed to open control connection to %d",
+			wpa_s->ctrl_iface->sock_pair[0]);
 		return -1;
 	}
 
@@ -109,9 +108,8 @@ static int wpa_cli_open_global_ctrl(void)
 {
 	global_ctrl_conn = wpa_ctrl_open(global->ctrl_iface->sock_pair[0]);
 	if (global_ctrl_conn == NULL) {
-		wpa_printf(MSG_ERROR, "Failed to open global control connection to "
-			   "%d - %s", global->ctrl_iface->sock_pair[0],
-			   strerror(errno));
+		wpa_printf(MSG_ERROR, "Failed to open global control connection to %d",
+			global->ctrl_iface->sock_pair[0]);
 		return -1;
 	}
 
