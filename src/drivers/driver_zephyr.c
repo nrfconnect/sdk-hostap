@@ -33,7 +33,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 		}
 		os_memcpy(msg.data, data, sizeof(*data));
 	}
-	send_wpa_supplicant_event(&msg);
+	z_wpas_send_event(&msg);
 }
 
 void wpa_drv_zep_event_mac_changed(struct zep_drv_if_ctx *if_ctx)
