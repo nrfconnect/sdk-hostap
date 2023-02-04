@@ -262,8 +262,8 @@ int z_wpa_cli_cmd_v(const char *fmt, ...)
 {
 	va_list cmd_args;
 	int argc;
-	const char *argv[MAX_ARGS];
-	char cmd[MAX_CMD_SIZE];
+	const char *argv[MAX_ARGS] = {0};
+	char cmd[MAX_CMD_SIZE] = {0};
 
 	va_start(cmd_args, fmt);
 	vsnprintf(cmd, sizeof(cmd), fmt, cmd_args);
