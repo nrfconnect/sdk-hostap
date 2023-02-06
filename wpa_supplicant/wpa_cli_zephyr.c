@@ -46,7 +46,7 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 	int ret;
 
 	if (ctrl_conn == NULL && global_ctrl_conn == NULL) {
-			printf("Not connected to wpa_supplicant - command dropped.\n");
+			wpa_printf(MSG_ERROR, "Not connected to wpa_supplicant - command dropped.\n");
 			return -1;
 	}
 	if (ifname_prefix) {
@@ -59,10 +59,10 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 	ret = wpa_ctrl_request(ctrl, cmd, os_strlen(cmd), buf, &len,
 							wpa_cli_msg_cb);
 	if (ret == -2) {
-			printf("'%s' command timed out.\n", cmd);
+			wpa_printf(MSG_ERROR, "'%s' command timed out.\n", cmd);
 			return -2;
 	} else if (ret < 0) {
-			printf("'%s' command failed.\n", cmd);
+			wpa_printf(MSG_ERROR, "'%s' command failed.\n", cmd);
 			return -1;
 	}
 
