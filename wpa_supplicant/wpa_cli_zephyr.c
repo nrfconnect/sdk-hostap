@@ -71,6 +71,15 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 		os_memcpy(resp, buf, len - 1);
 	}
 
+#ifndef CONFIG_WPA_CLI
+	/* This is not interactive */
+	if (os_strncmp(buf, "OK\n", len) == 0 ||
+	    os_strncmp(buf, "FAIL\n", len) == 0)
+	{
+		print = 0;
+	}
+#endif
+
 	if (print) {
 			buf[len] = '\0';
 			printf("%s", buf);
