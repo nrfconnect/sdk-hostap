@@ -81,8 +81,8 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 #endif
 
 	if (print) {
-			buf[len] = '\0';
-			printf("%s", buf);
+		buf[len] = '\0';
+		printf("%s", buf);
 	}
 	return 0;
 }
