@@ -105,10 +105,10 @@ struct wpa_driver_nl80211_data {
 	u8 *extended_capa, *extended_capa_mask;
 	unsigned int extended_capa_len;
 	struct drv_nl80211_ext_capa {
-		enum nl80211_iftype iftype;
+		enum nrf_wifi_iftype iftype;
 		u8 *ext_capa, *ext_capa_mask;
 		unsigned int ext_capa_len;
-	} iface_ext_capa[NL80211_IFTYPE_MAX];
+	} iface_ext_capa[NRF_WIFI_IFTYPE_MAX];
 	unsigned int num_iface_ext_capa;
 
 	int has_capability;

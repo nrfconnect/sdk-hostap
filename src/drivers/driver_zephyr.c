@@ -1265,7 +1265,21 @@ static int wpa_drv_zep_send_action(void *priv, unsigned int freq,
 			wait_time, 0);
 }
 
+static int nl80211_get_ext_capab(void *priv, enum wpa_driver_if_type type,
+			const u8 **ext_capa, const u8 **ext_capa_mask,
+			unsigned int *ext_capa_len)
+{
+	struct wpa_driver_capa capa;
 
+	wpa_drv_zep_get_capa(priv, &capa);
+
+	/* By default, use the per-radio values */
+	*ext_capa = capa.extended_capa;
+	*ext_capa_mask = capa.extended_capa_mask;
+	*ext_capa_len = capa.extended_capa_len;
+
+	return 0;
+}
 
 const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.name = "zephyr",
@@ -1288,4 +1302,5 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.signal_poll = wpa_drv_zep_signal_poll,
 	.send_action = wpa_drv_zep_send_action,
 	.get_hw_feature_data = wpa_drv_get_hw_feature_data,
+	.get_ext_capab = nl80211_get_ext_capab,
 };
