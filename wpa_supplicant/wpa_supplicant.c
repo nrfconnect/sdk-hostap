@@ -6998,10 +6998,9 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
 
 	if (terminate)
 		wpa_msg(wpa_s, MSG_INFO, WPA_EVENT_TERMINATING);
-#ifndef CONFIG_ZEPHYR
+
 	wpa_supplicant_ctrl_iface_deinit(wpa_s, wpa_s->ctrl_iface);
 	wpa_s->ctrl_iface = NULL;
-#endif
 
 #ifdef CONFIG_MESH
 	if (wpa_s->ifmsh) {
