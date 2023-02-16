@@ -132,9 +132,13 @@ static void wpa_supplicant_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	char *reply = NULL;
 	size_t reply_len = 0;
 
+	wpa_printf(MSG_DEBUG, "Global ctrl_iface received");
+
 	buf = os_zalloc(CTRL_IFACE_MAX_LEN + 1);
-	if (!buf)
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "Global ctrl_iface: no memory");
 		return;
+	}
 	res = recv(sock, buf, CTRL_IFACE_MAX_LEN, 0);
 	if (res < 0) {
 		wpa_printf(MSG_ERROR, "recvfrom(ctrl_iface): %s",
