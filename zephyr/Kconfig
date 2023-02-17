@@ -13,11 +13,12 @@ config WPA_SUPP
     select NET_SOCKETPAIR
     select NET_L2_WIFI_MGMT
     # For newlib min HEAP check, NCS_SAMPLE_DEFAULTS doesn't print assert information
-    select LOG_DEFAULT_MINIMAL
-	select ASSERT
-    select ASSERT_VERBOSE
+    imply LOG_DEFAULT_MINIMAL
+	imply ASSERT
+    # Without this User's doesn't know its a memory issue
+    imply ASSERT_VERBOSE
     # Without this reset on fatal error is triggered
-    select DEBUG
+    imply DEBUG
     ###
     select EXPERIMENTAL if !SOC_NRF5340_CPUAPP_QKAA
     help
