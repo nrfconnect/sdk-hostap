@@ -12,25 +12,11 @@ config WPA_SUPP
     select NET_SOCKETS_PACKET
     select NET_SOCKETPAIR
     select NET_L2_WIFI_MGMT
-    # For newlib min HEAP check, NCS_SAMPLE_DEFAULTS doesn't print assert information
-    select LOG_DEFAULT_MINIMAL
-	select ASSERT
-    select ASSERT_VERBOSE
-    # Without this reset on fatal error is triggered
-    select DEBUG
-    ###
     select EXPERIMENTAL if !SOC_NRF5340_CPUAPP_QKAA
     help
       WPA supplicant implements 802.1X related functions.
 
 if WPA_SUPP
-
-# For asserts, this avoids continuous reset
-config RESET_ON_FATAL_ERROR
-    default n
-
-config NEWLIB_LIBC_MIN_REQUIRED_HEAP_SIZE
-    default 30720
 
 config WPA_SUPP_THREAD_STACK_SIZE
     int "Stack size for wpa_supplicant thread"
