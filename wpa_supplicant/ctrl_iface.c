@@ -924,6 +924,17 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_WNM */
 	} else if (os_strcasecmp(cmd, "enable_dscp_policy_capa") == 0) {
 		wpa_s->enable_dscp_policy_capa = !!atoi(value);
+#ifdef CONFIG_SAE
+	} else if (os_strcasecmp(cmd, "sae_pwe") == 0) {
+		int pwe = atoi(value);
+
+		if (pwe < 0 || pwe > 2) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid SAE PWE value %d", pwe);
+			return -1;
+		}
+		wpa_s->conf->sae_pwe = pwe;
+#endif /* CONFIG_SAE */
 	} else {
 		value[-1] = '=';
 		ret = wpa_config_process_global(wpa_s->conf, cmd, -1);
