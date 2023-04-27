@@ -32,6 +32,21 @@ void wpa_supplicant_event_wrapper(void *ctx,
 			return;
 		}
 		os_memcpy(msg.data, data, sizeof(*data));
+		if (event == EVENT_AUTH) {
+			union wpa_event_data *data_tmp = msg.data;
+
+			if (data->auth.ies) {
+				char *ies = os_zalloc(data->auth.ies_len);
+
+				if (!ies) {
+					wpa_printf(MSG_ERROR, "%s: Failed to alloc ies\n", __func__);
+					return;
+				}
+
+				os_memcpy(ies, data->auth.ies, data->auth.ies_len);
+				data_tmp->auth.ies = ies;
+			}
+		}
 	}
 	z_wpas_send_event(&msg);
 }
