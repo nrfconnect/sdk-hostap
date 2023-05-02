@@ -18,8 +18,13 @@ static void wpa_supplicant_ctrl_iface_receive(int sock, void *eloop_ctx,
 	size_t reply_len = 0;
 
 	buf = os_zalloc(CTRL_IFACE_MAX_LEN + 1);
-	if (!buf)
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "%s: malloc for %d failed %s",
+			   __func__, CTRL_IFACE_MAX_LEN + 1,
+			   strerror(errno));
 		return;
+	}
+
 	res = recv(sock, buf, CTRL_IFACE_MAX_LEN, 0);
 	if (res < 0) {
 		wpa_printf(MSG_ERROR, "recvfrom(ctrl_iface): %s",
