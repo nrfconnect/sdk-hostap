@@ -122,15 +122,24 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 	struct wpa_scan_res **tmp = NULL;
 	size_t scan_res_len  = sizeof(struct wpa_scan_res) + r->ie_len + r->beacon_ie_len;
 
-	if (!if_ctx->scan_res2)
-		return;
+	if (!if_ctx->scan_res2) {
+		if_ctx->scan_res2 = os_zalloc(sizeof(*if_ctx->scan_res2));
+		wpa_printf(MSG_INFO, "%s: Alloc memory for scan results\n", __func__);
+	}
+
+	if (!if_ctx->scan_res2) {
+		wpa_printf(MSG_ERROR, "%s: Failed to alloc scan result\n", __func__);
+		goto err;
+	}
 
 	tmp = os_realloc_array(if_ctx->scan_res2->res,
 			       if_ctx->scan_res2->num + 1,
 			       sizeof(struct wpa_scan_res *));
 
 	if (!tmp) {
-		wpa_printf(MSG_ERROR, "%s: Failed to realloc scan result array\n", __func__);
+		wpa_printf(MSG_ERROR, "%s: Failed to realloc scan result array : %d entries\n",
+				   __func__,
+				   if_ctx->scan_res2->num + 1);
 		goto err;
 	}
 
@@ -821,6 +830,8 @@ static void *wpa_drv_zep_init(void *ctx,
 		goto out;
 	}
 
+	if_ctx->scan_res2 = NULL;
+
 	k_sem_init(&if_ctx->drv_resp_sem, 0, 1);
 
 	wpa_drv_mgmt_subscribe_non_ap(if_ctx);
@@ -846,6 +857,9 @@ static void wpa_drv_zep_deinit(void *priv)
 
 	dev_ops->deinit(if_ctx->dev_priv);
 
+	wpa_scan_results_free(if_ctx->scan_res2);
+	if_ctx->scan_res2 = NULL;
+
 	os_free(if_ctx);
 }
 
@@ -863,6 +877,10 @@ static int wpa_drv_zep_scan2(void *priv, struct wpa_driver_scan_params *params)
 	}
 
 	if_ctx = priv;
+
+	/* Free any previously stored but un-fetched results*/
+	wpa_scan_results_free(if_ctx->scan_res2);
+	if_ctx->scan_res2 = NULL;
 
 	if (if_ctx->scan_res2_get_in_prog) {
 		wpa_printf(MSG_ERROR, "%s: Scan is already in progress\n", __func__);
@@ -921,6 +939,7 @@ struct wpa_scan_results *wpa_drv_zep_get_scan_results2(void *priv)
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
 	int ret = -1;
+	struct wpa_scan_results *tmp = NULL;
 
 	if (!priv) {
 		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
@@ -938,7 +957,10 @@ struct wpa_scan_results *wpa_drv_zep_get_scan_results2(void *priv)
 		goto out;
 	}
 
-	if_ctx->scan_res2 = os_zalloc(sizeof(*if_ctx->scan_res2));
+	if (!if_ctx->scan_res2) {
+		if_ctx->scan_res2 = os_zalloc(sizeof(*if_ctx->scan_res2));
+		wpa_printf(MSG_INFO, "%s: Alloc memory for scan results\n", __func__);
+	}
 
 	if (!if_ctx->scan_res2) {
 		wpa_printf(MSG_ERROR, "%s: Failed to alloc memory for scan results\n", __func__);
@@ -966,13 +988,15 @@ struct wpa_scan_results *wpa_drv_zep_get_scan_results2(void *priv)
 	ret = 0;
 out:
 	if (ret == -1) {
-		if (if_ctx->scan_res2) {
-			wpa_scan_results_free(if_ctx->scan_res2);
-			if_ctx->scan_res2 = NULL;
-		}
+		wpa_scan_results_free(if_ctx->scan_res2);
+		if_ctx->scan_res2 = NULL;
 	}
 
-	return if_ctx->scan_res2;
+	tmp = if_ctx->scan_res2;
+
+	if_ctx->scan_res2 = NULL;
+
+	return tmp;
 }
 
 
