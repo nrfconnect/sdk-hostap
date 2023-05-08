@@ -115,4 +115,11 @@ config WPA_SUPP_DEBUG_LEVEL
       available levels and functions for emitting the messages. Note that
       runtime filtering can also be configured in addition to the compile-time
       filtering.
+
+config WPA_SUPP_DEBUG_SHOW_KEYS
+    bool "Show keys in debug output"
+    help
+      This option can be used to show keys (e.g., PSK, EAP session keys) in
+      debug log messages. This can be used to debug key derivation and
+      authentication issues. Please do not enable this option in production.
 endif
