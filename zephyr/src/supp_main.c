@@ -32,6 +32,7 @@ LOG_MODULE_REGISTER(wpa_supplicant, LOG_LEVEL_DBG);
 #include "driver_i.h"
 
 #include "supp_main.h"
+#include "supp_events.h"
 #include "wpa_cli_zephyr.h"
 
 K_SEM_DEFINE(z_wpas_ready_sem, 0, 1);
@@ -154,6 +155,7 @@ static int z_wpas_add_interface(const char* ifname)
 		wpa_printf(MSG_ERROR, "Failed to add iface: %s", ifname);
 		return -1;
 	}
+
 	wpa_s->conf->filter_ssids = 1;
 	wpa_s->conf->ap_scan= 1;
 
@@ -162,7 +164,17 @@ static int z_wpas_add_interface(const char* ifname)
 		k_mutex_unlock(&iface_up_mutex);
 	}
 
-	z_wpa_ctrl_init(wpa_s);
+	ret = z_wpa_ctrl_init(wpa_s);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to initialize control interface");
+		return ret;
+	}
+
+	generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_IFACE_ADDED, 0);
+
+	if (z_wpas_get_iface_count() == 1) {
+		generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_READY, 0);
+	}
 
 	return 0;
 }
@@ -184,6 +196,7 @@ static int z_wpas_remove_interface(const char* ifname)
 		return -1;
 	}
 
+	generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_IFACE_REMOVING, 0);
 	wpa_printf(MSG_DEBUG, "Remove interface %s\n", ifname);
 
 	os_memcpy(event->interface_status.ifname, ifname, IFNAMSIZ);
@@ -205,14 +218,24 @@ static int z_wpas_remove_interface(const char* ifname)
 
 	if (wpa_s->wpa_state != WPA_INTERFACE_DISABLED) {
 		wpa_printf(MSG_ERROR, "Failed to notify remove interface: %s", ifname);
+		generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_IFACE_REMOVED,
+		-1);
 		return -1;
 	}
 
 	ret = z_wpa_cli_global_cmd_v("interface_remove %s", ifname);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "Failed to remove interface: %s", ifname);
+		generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_IFACE_REMOVED,
+		-EINVAL);
 		return -1;
 	}
+
+	if (z_wpas_get_iface_count() == 0) {
+		generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_NOT_READY, 0);
+	}
+
+	generate_supp_state_event(ifname, NET_EVENT_WPA_SUPP_CMD_IFACE_REMOVED, 0);
 
 	return 0;
 }
@@ -436,6 +459,7 @@ static void z_wpas_start(void)
 		exitcode = wpa_supplicant_run(global);
 	}
 
+	generate_supp_state_event(DEFAULT_IFACE_NAME, NET_EVENT_WPA_SUPP_CMD_NOT_READY, 0);
 	eloop_unregister_read_sock(z_wpas_event_sockpair[0]);
 
 	z_wpa_ctrl_deinit();
