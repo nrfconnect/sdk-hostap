@@ -414,6 +414,14 @@ static void z_wpas_start(void)
 		goto out;
 	}
 
+#if defined (CONFIG_WPA_SUPP_LOG_LEVEL_DBG) && defined (CONFIG_WPA_SUPP_DEBUG_SHOW_KEYS)
+	wpa_supplicant_set_debug_params(global, MSG_DEBUG, 1, 1);
+#elif defined (CONFIG_WPA_SUPP_LOG_LEVEL_DBG)
+	wpa_supplicant_set_debug_params(global, MSG_DEBUG, 1, 0);
+#else
+	wpa_supplicant_set_debug_params(global, MSG_INFO, 0, 0);
+#endif
+
 #if defined(CONFIG_FST) && defined(CONFIG_CTRL_IFACE)
 	if (!fst_global_add_ctrl(fst_ctrl_cli)) {
 		wpa_printf(MSG_WARNING, "Failed to add CLI FST ctrl");

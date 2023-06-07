@@ -148,8 +148,10 @@ config WPA_SUPP_DEBUG_LEVEL
       runtime filtering can also be configured in addition to the compile-time
       filtering.
 
-# Debug logs need more buffer space
-config LOG_BUFFER_SIZE
-    default 4096 if WPA_SUPP_LOG_LEVEL_DBG
-    default 2048
+config WPA_SUPP_DEBUG_SHOW_KEYS
+    bool "Show keys in debug output"
+    help
+      This option can be used to show keys (e.g., PSK, EAP session keys) in
+      debug log messages. This can be used to debug key derivation and
+      authentication issues. Please do not enable this option in production.
 endif

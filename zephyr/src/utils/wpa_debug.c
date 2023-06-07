@@ -54,7 +54,7 @@ void wpa_printf_impl(int level, const char *fmt, ...)
 	case MSG_DEBUG:
 	case MSG_MSGDUMP:
 	case MSG_EXCESSIVE:
-		LOG_DBG("%s", buffer);
+		printf("%s\n", buffer);
 		break;
 	default:
 		break;
