@@ -3589,7 +3589,8 @@ static void wpa_supplicant_event_disassoc(struct wpa_supplicant *wpa_s,
 			MAC2STR(bssid), reason_code,
 			locally_generated ? " locally_generated=1" : "");
 #ifdef CONFIG_ZEPHYR
-		send_wifi_mgmt_event(wpa_s->ifname, NET_EVENT_WIFI_CMD_DISCONNECT_RESULT, 0);
+		int status = 0;
+		send_wifi_mgmt_event(wpa_s->ifname, NET_EVENT_WIFI_CMD_DISCONNECT_RESULT, (void *)&status, sizeof(int));
 #endif /* CONFIG_ZEPHYR */
 	}
 }
