@@ -20,6 +20,7 @@
 #include "common/ieee802_11_defs.h"
 
 #include "supp_main.h"
+#include "supp_events.h"
 #include "wpa_cli_zephyr.h"
 #include "ctrl_iface_zephyr.h"
 
@@ -30,6 +31,7 @@
 #define MAX_ARGS 32
 
 struct wpa_ctrl *ctrl_conn;
+struct wpa_ctrl *mon_conn;
 struct wpa_ctrl *global_ctrl_conn;
 char *ifname_prefix = NULL;
 extern struct wpa_global *global;
@@ -92,8 +94,33 @@ static void wpa_cli_close_connection(void)
 	ctrl_conn = NULL;
 }
 
+static void wpa_cli_recv_pending(struct wpa_ctrl *ctrl)
+{
+	while (wpa_ctrl_pending(ctrl) > 0) {
+		char buf[MAX_CTRL_MSG_LEN];
+		size_t len = sizeof(buf) - 1;
+		if (wpa_ctrl_recv(ctrl, buf, &len) == 0) {
+			buf[len] = '\0';
+			if (strlen(buf) > 0) {
+				send_wifi_mgmt_event("wlan0", NET_EVENT_WPA_SUPP_CMD_INT_EVENT,
+						    (void *)&buf[0], strlen(buf));
+			}
+		} else {
+			wpa_printf(MSG_INFO, "Could not read pending message.\n");
+		}
+	}
+}
+
+static void wpa_cli_mon_receive(int sock, void *eloop_ctx,
+					      void *sock_ctx)
+{
+	wpa_cli_recv_pending(mon_conn);
+}
+
 static int wpa_cli_open_connection(struct wpa_supplicant *wpa_s)
 {
+	int ret;
+
 	ctrl_conn = wpa_ctrl_open(wpa_s->ctrl_iface->sock_pair[0]);
 	if (ctrl_conn == NULL) {
 		wpa_printf(MSG_ERROR, "Failed to open control connection to %d",
@@ -101,7 +128,24 @@ static int wpa_cli_open_connection(struct wpa_supplicant *wpa_s)
 		return -1;
 	}
 
+	ret = socketpair(AF_UNIX, SOCK_STREAM, 0, wpa_s->ctrl_iface->mon_sock_pair);
+	if (ret != 0) {
+		wpa_printf(MSG_ERROR, "Failed to open monitor connection: %s",
+			    strerror(errno));
+		goto fail;
+	}
+	mon_conn = wpa_ctrl_open(wpa_s->ctrl_iface->mon_sock_pair[0]);
+	if (mon_conn) {
+		if (wpa_ctrl_attach(ctrl_conn) == 0) {
+			eloop_register_read_sock(wpa_s->ctrl_iface->mon_sock_pair[0],
+						wpa_cli_mon_receive, NULL, NULL);
+		}
+	}
+
 	return 0;
+fail:
+	wpa_ctrl_close(ctrl_conn);
+	return -1;
 }
 
 static int wpa_cli_open_global_ctrl(void)
