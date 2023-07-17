@@ -12,25 +12,21 @@ static void wpa_supplicant_ctrl_iface_receive(int sock, void *eloop_ctx,
 					      void *sock_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
-	char *buf, *pos;
+	char buf[CTRL_IFACE_MAX_LEN + 1], *pos;
 	int res;
 	char *reply = NULL;
 	size_t reply_len = 0;
 
-	buf = os_zalloc(CTRL_IFACE_MAX_LEN + 1);
-	if (!buf)
-		return;
+	memset(buf, 0, sizeof(buf));
 	res = recv(sock, buf, CTRL_IFACE_MAX_LEN, 0);
 	if (res < 0) {
 		wpa_printf(MSG_ERROR, "recvfrom(ctrl_iface): %s",
 			   strerror(errno));
-		os_free(buf);
 		return;
 	}
 
 	if ((size_t) res > CTRL_IFACE_MAX_LEN) {
 		wpa_printf(MSG_ERROR, "recvform(ctrl_iface): input truncated");
-		os_free(buf);
 		return;
 	}
 	buf[res] = '\0';
@@ -50,8 +46,6 @@ static void wpa_supplicant_ctrl_iface_receive(int sock, void *eloop_ctx,
 	} else if (reply_len == 2) {
 		send(sock, "OK\n", 3, 0);
 	}
-
-	os_free(buf);
 }
 
 
