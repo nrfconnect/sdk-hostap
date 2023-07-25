@@ -542,3 +542,16 @@ int z_wpa_supplicant_reg_domain(const struct device *dev,
 
 	return wifi_mgmt_api->reg_domain(dev, reg_domain);
 }
+
+int z_wpa_supplicant_promisc_setup(const struct device *dev,
+				struct wifi_promisc_setup *promisc_data)
+{
+	const struct wifi_mgmt_ops *const wifi_mgmt_api = get_wifi_mgmt_api(dev);
+
+	if (!wifi_mgmt_api || !wifi_mgmt_api->promisc_setup) {
+		wpa_printf(MSG_ERROR, "Promiscuous modes not supported");
+		return -ENOTSUP;
+	}
+
+	return wifi_mgmt_api->promisc_setup(dev, promisc_data);
+}

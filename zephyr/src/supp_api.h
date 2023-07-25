@@ -109,4 +109,15 @@ int z_wpa_supplicant_get_power_save_config(const struct device *dev,
  */
 int z_wpa_supplicant_reg_domain(const struct device *dev,
 				struct wifi_reg_domain *reg_domain);
+
+/**
+ * @brief Set Promiscuous Mode Operation for WiFi interface
+ *
+ * @param dev Wi-Fi interface name to use
+ * @param promisc_data data containing promiscuous mode of operation
+ * @return 0 for OK; -1 for ERROR
+ */
+int z_wpa_supplicant_promisc_setup(const struct device *dev,
+				struct wifi_promisc_setup *promisc_data);
+
 #endif /* ZEPHYR_SUPP_MGMT_H */
