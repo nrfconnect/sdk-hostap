@@ -6,9 +6,9 @@
  * See README for more details.
  */
 /* Per-interface ctrl_iface */
-#include "includes.h"
+#include "utils/includes.h"
 
-#include "common.h"
+#include "utils/common.h"
 #include "eloop.h"
 #include "config.h"
 #include "eapol_supp/eapol_supp_sm.h"
