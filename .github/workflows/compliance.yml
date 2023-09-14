@@ -14,7 +14,6 @@ jobs:
     - name: Checkout the code
       uses: actions/checkout@v3
       with:
-        path: sdk-hostap
         ref: ${{ github.event.pull_request.head.sha }}
         fetch-depth: 0
 
@@ -25,7 +24,6 @@ jobs:
         key: ${{ runner.os }}-doc-pip
 
     - name: Install python dependencies
-      working-directory: sdk-hostap
       run: |
         pip3 install setuptools
         pip3 install wheel
@@ -35,7 +33,6 @@ jobs:
     - name: Clone Zephyr downstream
       env:
         BASE_REF: ${{ github.base_ref }}
-      working-directory: sdk-hostap
       run: |
         git config --global user.email "you@example.com"
         git config --global user.name "Your Name"
@@ -57,7 +54,6 @@ jobs:
       id: codeowners
       env:
         BASE_REF: ${{ github.base_ref }}
-      working-directory: sdk-hostap
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       run: |
         ./scripts/ci/codeowners.py -c origin/${BASE_REF}..
@@ -67,10 +63,10 @@ jobs:
       id: compliance
       env:
         BASE_REF: ${{ github.base_ref }}
-      working-directory: sdk-hostap
+      working-directory: sdk-zephyr
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       run: |
-        export ZEPHYR_BASE="$(dirname "$(pwd)")/sdk-hostap/sdk-zephyr"
+        export ZEPHYR_BASE="$(dirname "$(pwd)")/sdk-zephyr"
         # debug
         ls -la
         git log  --pretty=oneline | head -n 10
@@ -83,14 +79,14 @@ jobs:
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       with:
         name: compliance.xml
-        path: sdk-hostap/compliance.xml
+        path: sdk-zephyr/compliance.xml
 
     - name: check-warns
-      working-directory: sdk-hostap
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       run: |
         export ZEPHYR_BASE="$(dirname "$(pwd)")/sdk-hostap/sdk-zephyr"
-        if [[ ! -s "compliance.xml" ]]; then
+        if [[ ! -s $ZEPHYR_BASE/"compliance.xml" ]]; then
+          echo "::error ::compliance.xml not found in $ZEPHYR_BASE"
           exit 1;
         fi
 
