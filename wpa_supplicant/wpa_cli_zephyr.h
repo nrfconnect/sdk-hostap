@@ -27,7 +27,7 @@ struct status_resp {
 
 /* Public APIs */
 int z_wpa_ctrl_init(void *wpa_s);
-void z_wpa_ctrl_deinit(void);
+void z_wpa_ctrl_deinit(void *wpa_s);
 int z_wpa_ctrl_zephyr_cmd(int argc, const char *argv[]);
 int z_wpa_cli_cmd_v(const char *fmt, ...);
 
