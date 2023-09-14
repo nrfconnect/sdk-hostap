@@ -85,13 +85,28 @@ static int wpa_ctrl_command_resp(struct wpa_ctrl *ctrl, const char *cmd, char *r
 	return _wpa_ctrl_command(ctrl, cmd, 0, resp);
 }
 
-static void wpa_cli_close_connection(void)
+static void wpa_cli_close_connection(struct wpa_supplicant *wpa_s)
 {
+	int ret;
+
 	if (ctrl_conn == NULL)
 		return;
 
+	ret = wpa_ctrl_detach(ctrl_conn);
+	if (ret < 0) {
+		wpa_printf(MSG_INFO, "Failed to detach from wpa_supplicant: %s",
+			strerror(errno));
+	}
 	wpa_ctrl_close(ctrl_conn);
 	ctrl_conn = NULL;
+
+	eloop_unregister_read_sock(wpa_s->ctrl_iface->mon_sock_pair[0]);
+
+	wpa_ctrl_close(mon_conn);
+	mon_conn = NULL;
+
+	close(wpa_s->ctrl_iface->mon_sock_pair[1]);
+	wpa_s->ctrl_iface->mon_sock_pair[1] = -1;
 }
 
 static void wpa_cli_recv_pending(struct wpa_ctrl *ctrl)
@@ -339,9 +354,11 @@ int z_wpa_ctrl_init(void *wpa_s)
 	return ret;
 }
 
-void z_wpa_ctrl_deinit(void)
+void z_wpa_ctrl_deinit(void *wpa_s)
 {
-	wpa_cli_close_connection();
+	struct wpa_supplicant *supp = wpa_s;
+
+	wpa_cli_close_connection(supp);
 }
 
 int z_wpa_ctrl_zephyr_cmd(int argc, const char *argv[])
