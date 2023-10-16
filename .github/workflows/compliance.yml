@@ -70,7 +70,7 @@ jobs:
         # debug
         ls -la
         git log  --pretty=oneline | head -n 10
-        ./scripts/ci/check_compliance.py --annotate -e KconfigBasic -e Kconfig \
+        ./scripts/ci/check_compliance.py --annotate -e gitlint -e KconfigBasic -e Kconfig \
         -c origin/${BASE_REF}..
 
     - name: upload-results
@@ -106,3 +106,16 @@ jobs:
         if [ "${exit}" == "1" ]; then
           exit 1;
         fi
+
+    - name: Get sdk-hostap main branch commit
+      if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
+      run: |
+        git fetch origin main
+        echo "MAIN_SHA=$(git rev-parse origin/main)" >> $GITHUB_ENV
+
+    - name: Check nRF sauce tags
+      if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
+      uses: nrfconnect/action-commit-tags@v1
+      with:
+        target: $GITHUB_WORKSPACE
+        revrange: $MAIN_SHA..${{ github.event.pull_request.head.sha }}
