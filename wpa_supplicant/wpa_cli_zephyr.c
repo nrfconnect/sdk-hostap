@@ -68,7 +68,7 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 			return -1;
 	}
 
-	if (resp) {
+	if (resp && len > 1) {
 		/* Remove the LF */
 		os_memcpy(resp, buf, len - 1);
 	}
