@@ -21,7 +21,7 @@
 #include <mbedtls/build_info.h>
 #include <assert.h>
 
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #define TLS_RANDOM_LEN 32
 #define TLS_MASTER_SECRET_LEN 48

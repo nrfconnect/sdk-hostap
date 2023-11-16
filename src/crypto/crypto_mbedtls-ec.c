@@ -22,7 +22,7 @@
 #include "mbedtls/error.h"
 #include "mbedtls/oid.h"
 
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #define IANA_SECP256R1 19
 #define ECP_PRV_DER_MAX_BYTES 29 + 3 * MBEDTLS_ECP_MAX_BYTES
