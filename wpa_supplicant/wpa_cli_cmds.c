@@ -54,7 +54,7 @@ static int wpa_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd, int min_args,
 		return -1;
 	}
 	memset(buf, '\0', CMD_BUF_LEN);
-	if (write_cmd(buf, CMD_BUF_LEN, cmd, argc-1, argv) < 0){
+	if (write_cmd(buf, CMD_BUF_LEN, cmd, argc, argv) < 0){
 		ret = -1;
 		goto out;
 	}
@@ -3689,7 +3689,7 @@ int wpa_request(struct wpa_ctrl *ctrl, int argc, char *argv[])
 		wpa_printf(MSG_INFO, "Unknown command '%s'\n", argv[0]);
 		ret = 1;
 	} else {
-		ret = match->handler(ctrl, argc, &argv[1]);
+		ret = match->handler(ctrl, argc - 1, &argv[1]);
 	}
 
 	return ret;
