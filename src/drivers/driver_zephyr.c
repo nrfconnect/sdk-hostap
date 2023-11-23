@@ -14,7 +14,8 @@
 #include "supp_main.h"
 #include "common/ieee802_11_common.h"
 
-#define SCAN_TIMEOUT 30
+/* Zephyr drivers have a timeout of 30s wait for them to handle the cleanup */
+#define SCAN_TIMEOUT 35
 #define GET_WIPHY_TIMEOUT 10
 
 void wpa_supplicant_event_wrapper(void *ctx,
