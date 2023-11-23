@@ -15,6 +15,7 @@
 #include "common/ieee802_11_common.h"
 
 /* Zephyr drivers have a timeout of 30s wait for them to handle the cleanup */
+/* TODO: The timeout should be retrieved from the driver to keep it generic */
 #define SCAN_TIMEOUT 35
 #define GET_WIPHY_TIMEOUT 10
 
