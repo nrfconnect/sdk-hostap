@@ -114,7 +114,7 @@ static void wpa_cli_close_connection(struct wpa_supplicant *wpa_s)
 static void wpa_cli_recv_pending(struct wpa_ctrl *ctrl)
 {
 	while (wpa_ctrl_pending(ctrl) > 0) {
-		char buf[MAX_CTRL_MSG_LEN];
+		char buf[sizeof(struct conn_msg)];
 		size_t len = sizeof(buf) - 1;
 
 		if (wpa_ctrl_recv(ctrl, buf, &len) == 0) {
