@@ -118,13 +118,21 @@ static void wpa_cli_recv_pending(struct wpa_ctrl *ctrl)
 		size_t len = sizeof(buf) - 1;
 
 		if (wpa_ctrl_recv(ctrl, buf, &len) == 0) {
-			buf[len] = '\0';
-			if (strlen(buf) > 0) {
+			struct conn_msg *msg = (struct conn_msg *)buf;
+
+			msg->msg[msg->msg_len] = '\0';
+			wpa_printf(MSG_DEBUG, "Received len: %d, msg_len:%d - %s->END\n",
+					   len, msg->msg_len, msg->msg);
+			if (msg->msg_len >= MAX_CTRL_MSG_LEN) {
+				wpa_printf(MSG_INFO, "Too long message received.\n");
+				continue;
+			}
+
+			if (msg->msg_len > 0) {
 				/* Only interested in CTRL-EVENTs */
-				if (strncmp(buf, "CTRL-EVENT", 10) == 0) {
-					wpa_printf(MSG_DEBUG, "Received event: %s\n", buf);
+				if (strncmp(msg->msg, "CTRL-EVENT", 10) == 0) {
 					send_wifi_mgmt_event("wlan0", NET_EVENT_WPA_SUPP_CMD_INT_EVENT,
-							    (void *)&buf[0], strlen(buf));
+							     msg->msg, msg->msg_len);
 				}
 			}
 		} else {
