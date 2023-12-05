@@ -115,7 +115,7 @@ static void wpa_cli_recv_pending(struct wpa_ctrl *ctrl)
 {
 	while (wpa_ctrl_pending(ctrl) > 0) {
 		char buf[sizeof(struct conn_msg)];
-		size_t len = sizeof(buf) - 1;
+		size_t len = sizeof(buf);
 
 		if (wpa_ctrl_recv(ctrl, buf, &len) == 0) {
 			struct conn_msg *msg = (struct conn_msg *)buf;
