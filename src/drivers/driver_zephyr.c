@@ -1097,8 +1097,16 @@ static int wpa_drv_zep_associate(void *priv,
 
 	dev_ops = if_ctx->dev_ctx->config;
 
-	ret = dev_ops->associate(if_ctx->dev_priv,
-				 params);
+	if (IS_ENABLED(CONFIG_AP) && params->mode == IEEE80211_MODE_AP) {
+		ret = dev_ops->init_ap(if_ctx->dev_priv,
+				  params);
+	} else if (params->mode == IEEE80211_MODE_INFRA) {
+		ret = dev_ops->associate(if_ctx->dev_priv,
+				   params);
+	} else {
+		wpa_printf(MSG_ERROR, "%s: Unsupported mode\n", __func__);
+		goto out;
+	}
 
 	if (ret) {
 		wpa_printf(MSG_ERROR, "%s: associate op failed\n", __func__);
@@ -1430,6 +1438,120 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_AP
+static int wpa_drv_zep_set_ap(void *priv,
+			      struct wpa_driver_ap_params *params)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+
+	if ((!priv) || (!params)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!if_ctx->beacon_set && !dev_ops->start_ap) {
+		wpa_printf(MSG_ERROR, "%s: set_ap op not supported\n", __func__);
+		goto out;
+	} else if (if_ctx->beacon_set && !dev_ops->change_beacon) {
+		wpa_printf(MSG_ERROR, "%s: change_beacon op not supported\n", __func__);
+		goto out;
+	}
+
+	if (!if_ctx->beacon_set) {
+		ret = dev_ops->start_ap(if_ctx->dev_priv,
+					params);
+	} else {
+		ret = dev_ops->change_beacon(if_ctx->dev_priv,
+					     params);
+	}
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: set_ap op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+	if (!if_ctx->beacon_set) {
+		if_ctx->beacon_set = true;
+	}
+
+	ret = 0;
+
+out:
+	return ret;
+}
+
+int wpa_drv_zep_stop_ap(void *priv)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle\n", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!dev_ops->stop_ap) {
+		wpa_printf(MSG_ERROR, "%s: stop_ap op not supported\n", __func__);
+		goto out;
+	}
+
+	ret = dev_ops->stop_ap(if_ctx->dev_priv);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: stop_ap op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+	ret = 0;
+
+out:
+	return ret;
+}
+
+int wpa_drv_zep_deinit_ap(void *priv)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret = -1;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle\n", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!dev_ops->deinit_ap) {
+		wpa_printf(MSG_ERROR, "%s: deinit_ap op not supported\n", __func__);
+		goto out;
+	}
+
+	ret = dev_ops->deinit_ap(if_ctx->dev_priv);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: deinit_ap op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+	ret = 0;
+
+out:
+	return ret;
+}
+#endif /* CONFIG_AP */
+
 const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.name = "zephyr",
 	.desc = "Zephyr wpa_supplicant driver",
@@ -1453,4 +1575,9 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.get_hw_feature_data = wpa_drv_get_hw_feature_data,
 	.get_ext_capab = nl80211_get_ext_capab,
 	.get_conn_info = wpa_drv_zep_get_conn_info,
+#ifdef CONFIG_AP
+	.set_ap = wpa_drv_zep_set_ap,
+	.stop_ap = wpa_drv_zep_stop_ap,
+	.deinit_ap = wpa_drv_zep_deinit_ap,
+#endif /* CONFIG_AP */
 };

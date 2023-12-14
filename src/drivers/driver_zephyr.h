@@ -129,6 +129,7 @@ struct zep_drv_if_ctx {
 	unsigned char prev_bssid[6];
 	unsigned char auth_bssid[6];
 	unsigned char auth_attempt_bssid[6];
+	bool beacon_set;
 };
 
 
@@ -221,6 +222,20 @@ struct zep_wpa_supp_dev_ops {
 
 	int (*get_conn_info)(void *if_priv,
 			struct wpa_conn_info *info);
+
+	/* AP mode (shared headers, so, skip compile time flags protection)*/
+	int (*init_ap)(void *if_priv,
+			struct wpa_driver_associate_params *params);
+
+	int (*start_ap)(void *if_priv,
+			struct wpa_driver_ap_params *params);
+
+	int (*change_beacon)(void *if_priv,
+			struct wpa_driver_ap_params *params);
+
+	int (*stop_ap)(void *if_priv);
+
+	int (*deinit_ap)(void *if_priv);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
