@@ -1438,11 +1438,51 @@ out:
 }
 
 #ifdef CONFIG_AP
+static int register_mgmt_frames_ap(struct zep_drv_if_ctx *if_ctx)
+{
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	static const int stypes[] = {
+		WLAN_FC_STYPE_AUTH,
+		WLAN_FC_STYPE_ASSOC_REQ,
+		WLAN_FC_STYPE_REASSOC_REQ,
+		WLAN_FC_STYPE_DISASSOC,
+		WLAN_FC_STYPE_DEAUTH,
+		WLAN_FC_STYPE_PROBE_REQ,
+	};
+	int i, ret = -1;
+
+	if (!if_ctx) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle\n", __func__);
+		goto out;
+	}
+
+	dev_ops = if_ctx->dev_ctx->config;
+
+	if (!dev_ops->register_mgmt_frame) {
+		wpa_printf(MSG_ERROR, "%s: register_mgmt_frame op not supported\n", __func__);
+		goto out;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(stypes); i++) {
+		ret = dev_ops->register_mgmt_frame(if_ctx->dev_priv,
+						   stypes[i] << 4,
+						   0,
+						   NULL);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "%s: register_mgmt_frame op failed\n", __func__);
+			goto out;
+		}
+	}
+
+out:
+	return ret;
+}
+
 static int wpa_drv_zep_set_ap(void *priv,
 			      struct wpa_driver_ap_params *params)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if ((!priv) || (!params)) {
@@ -1455,7 +1495,7 @@ static int wpa_drv_zep_set_ap(void *priv,
 	dev_ops = if_ctx->dev_ctx->config;
 
 	if (!if_ctx->beacon_set && !dev_ops->start_ap) {
-		wpa_printf(MSG_ERROR, "%s: set_ap op not supported\n", __func__);
+		wpa_printf(MSG_ERROR, "%s: start_ap op not supported\n", __func__);
 		goto out;
 	} else if (if_ctx->beacon_set && !dev_ops->change_beacon) {
 		wpa_printf(MSG_ERROR, "%s: change_beacon op not supported\n", __func__);
@@ -1463,22 +1503,29 @@ static int wpa_drv_zep_set_ap(void *priv,
 	}
 
 	if (!if_ctx->beacon_set) {
+		ret = register_mgmt_frames_ap(if_ctx);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "%s: register_mgmt_frames_ap failed\n", __func__);
+			goto out;
+		}
 		ret = dev_ops->start_ap(if_ctx->dev_priv,
 					params);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "%s: start_ap op failed: %d\n", __func__, ret);
+			goto out;
+		}
 	} else {
 		ret = dev_ops->change_beacon(if_ctx->dev_priv,
 					     params);
-	}
-	if (ret) {
-		wpa_printf(MSG_ERROR, "%s: set_ap op failed: %d\n", __func__, ret);
-		goto out;
+		if (ret) {
+			wpa_printf(MSG_ERROR, "%s: change_beacon op failed: %d\n", __func__, ret);
+			goto out;
+		}
 	}
 
 	if (!if_ctx->beacon_set) {
 		if_ctx->beacon_set = true;
 	}
-
-	ret = 0;
 
 out:
 	return ret;
@@ -1487,7 +1534,7 @@ out:
 int wpa_drv_zep_stop_ap(void *priv)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if (!priv) {
@@ -1511,8 +1558,6 @@ int wpa_drv_zep_stop_ap(void *priv)
 		goto out;
 	}
 
-	ret = 0;
-
 out:
 	return ret;
 }
@@ -1520,7 +1565,7 @@ out:
 int wpa_drv_zep_deinit_ap(void *priv)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if (!priv) {
@@ -1544,7 +1589,145 @@ int wpa_drv_zep_deinit_ap(void *priv)
 		goto out;
 	}
 
-	ret = 0;
+out:
+	return ret;
+}
+
+int wpa_drv_zep_sta_add(void *priv, struct hostapd_sta_add_params *params)
+{
+	struct zep_drv_if_ctx *if_ctx = priv;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret = -1;
+
+	if ((!priv) || (!params)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	dev_ops = if_ctx->dev_ctx->config;
+	if (!dev_ops->sta_add) {
+		wpa_printf(MSG_ERROR, "%s: sta_add op not supported\n", __func__);
+		goto out;
+	}
+
+	ret = dev_ops->sta_add(if_ctx->dev_priv, params);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: sta_add op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+int wpa_drv_zep_sta_set_flags(void *priv, const u8 *addr, u32 total_flags,
+	u32 flags_or, u32 flags_and)
+{
+	struct zep_drv_if_ctx *if_ctx = priv;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret = -1;
+
+	if ((!priv) || (!addr)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	dev_ops = if_ctx->dev_ctx->config;
+	if (!dev_ops->sta_set_flags) {
+		wpa_printf(MSG_ERROR, "%s: sta_set_flags op not supported\n",
+			   __func__);
+		goto out;
+	}
+
+	ret = dev_ops->sta_set_flags(if_ctx->dev_priv, addr, total_flags, flags_or, flags_and);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: sta_set_flags op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+int wpa_drv_zep_sta_deauth(void *priv, const u8 *own_addr, const u8 *addr, u16 reason_code)
+{
+	struct zep_drv_if_ctx *if_ctx = priv;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret = -1;
+
+	if ((!priv) || (!addr)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	dev_ops = if_ctx->dev_ctx->config;
+	if (!dev_ops->sta_deauth) {
+		wpa_printf(MSG_ERROR, "%s: sta_deauth op not supported\n",
+			   __func__);
+		goto out;
+	}
+
+	ret = dev_ops->sta_deauth(if_ctx->dev_priv, own_addr, addr, reason_code);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: sta_deauth op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+int wpa_drv_zep_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr, u16 reason_code)
+{
+	struct zep_drv_if_ctx *if_ctx = priv;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret = -1;
+
+	if ((!priv) || (!addr)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	dev_ops = if_ctx->dev_ctx->config;
+	if (!dev_ops->sta_disassoc) {
+		wpa_printf(MSG_ERROR, "%s: sta_disassoc op not supported\n",
+			   __func__);
+		goto out;
+	}
+
+	ret = dev_ops->sta_disassoc(if_ctx->dev_priv, own_addr, addr, reason_code);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: sta_disassoc op failed: %d\n", __func__, ret);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+int wpa_drv_zep_sta_remove(void *priv, const u8 *addr)
+{
+	struct zep_drv_if_ctx *if_ctx = priv;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret = -1;
+
+	if ((!priv) || (!addr)) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
+		goto out;
+	}
+
+	dev_ops = if_ctx->dev_ctx->config;
+	if (!dev_ops->sta_remove) {
+		wpa_printf(MSG_ERROR, "%s: sta_remove op not supported\n",
+			   __func__);
+		goto out;
+	}
+
+	ret = dev_ops->sta_remove(if_ctx->dev_priv, addr);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: sta_remove op failed: %d\n", __func__, ret);
+		goto out;
+	}
 
 out:
 	return ret;
@@ -1578,5 +1761,10 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.set_ap = wpa_drv_zep_set_ap,
 	.stop_ap = wpa_drv_zep_stop_ap,
 	.deinit_ap = wpa_drv_zep_deinit_ap,
+	.sta_add = wpa_drv_zep_sta_add,
+	.sta_set_flags = wpa_drv_zep_sta_set_flags,
+	.sta_deauth = wpa_drv_zep_sta_deauth,
+	.sta_disassoc = wpa_drv_zep_sta_disassoc,
+	.sta_remove = wpa_drv_zep_sta_remove,
 #endif /* CONFIG_AP */
 };

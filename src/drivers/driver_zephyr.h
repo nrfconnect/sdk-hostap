@@ -236,6 +236,26 @@ struct zep_wpa_supp_dev_ops {
 	int (*stop_ap)(void *if_priv);
 
 	int (*deinit_ap)(void *if_priv);
+
+	int (*sta_add)(void *if_priv,
+			struct hostapd_sta_add_params *params);
+
+	int (*sta_remove)(void *if_priv, const u8 *addr);
+
+	int (*sta_set_flags)(void *if_priv, const u8 *addr,
+			unsigned int total_flags, unsigned int flags_or,
+			unsigned int flags_and);
+
+	int (*sta_clear_stats)(void *if_priv, const u8 *addr);
+
+	int (*sta_deauth)(void *if_priv, const u8 *own_addr, const u8 *addr,
+			int reason_code);
+
+	int (*sta_disassoc)(void *if_priv, const u8 *own_addr, const u8 *addr,
+			int reason_code);
+
+	int (*register_mgmt_frame)(void *if_priv, u16 frame_type,
+			size_t match_len, const u8 *match);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
