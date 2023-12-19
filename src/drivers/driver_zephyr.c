@@ -1527,6 +1527,7 @@ static int wpa_drv_zep_set_ap(void *priv,
 		if_ctx->beacon_set = true;
 	}
 
+	if_ctx->freq = params->freq->freq;
 out:
 	return ret;
 }
@@ -1558,6 +1559,7 @@ int wpa_drv_zep_stop_ap(void *priv)
 		goto out;
 	}
 
+	if_ctx->freq = 0;
 out:
 	return ret;
 }
@@ -1732,6 +1734,35 @@ int wpa_drv_zep_sta_remove(void *priv, const u8 *addr)
 out:
 	return ret;
 }
+
+int wpa_drv_zep_send_mlme(void *priv, const u8 *data, size_t data_len, int noack,
+	unsigned int freq, const u16 *csa_offs, size_t csa_offs_len, int no_encrypt,
+	unsigned int wait)
+{
+	struct zep_drv_if_ctx *if_ctx = priv;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret = -1;
+
+	dev_ops = if_ctx->dev_ctx->config;
+	if (!dev_ops->send_mlme) {
+		wpa_printf(MSG_ERROR, "%s: send_mlme op not supported\n",
+			   __func__);
+		goto out;
+	}
+
+	if (freq == 0) {
+		freq = if_ctx->freq;
+	}
+
+	ret = dev_ops->send_mlme(if_ctx->dev_priv, data, data_len, noack, freq, 0, 0, wait, 0);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: send_mlme op failed: %d\n", __func__, ret);
+		goto out;
+	}
+	ret = 0;
+out:
+	return ret;
+}
 #endif /* CONFIG_AP */
 
 const struct wpa_driver_ops wpa_driver_zep_ops = {
@@ -1758,6 +1789,7 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.get_ext_capab = nl80211_get_ext_capab,
 	.get_conn_info = wpa_drv_zep_get_conn_info,
 #ifdef CONFIG_AP
+	.send_mlme = wpa_drv_zep_send_mlme,
 	.set_ap = wpa_drv_zep_set_ap,
 	.stop_ap = wpa_drv_zep_stop_ap,
 	.deinit_ap = wpa_drv_zep_deinit_ap,

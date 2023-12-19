@@ -117,7 +117,7 @@ struct zep_drv_if_ctx {
 	struct wpa_scan_results *scan_res2;
 	bool scan_res2_get_in_prog;
 
-	unsigned int assoc_freq;
+	unsigned int freq;
 	unsigned char ssid[SSID_MAX_LEN];
 	size_t ssid_len;
 	unsigned char bssid[6];
