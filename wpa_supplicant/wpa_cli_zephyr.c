@@ -326,6 +326,11 @@ char supp_make_argv(size_t *argc, const char **argv, char *cmd,
 
 int wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd)
 {
+	return _wpa_ctrl_command(ctrl, cmd, 0, NULL);
+}
+
+int wpa_ctrl_command_interactive(struct wpa_ctrl *ctrl, const char *cmd)
+{
 	return _wpa_ctrl_command(ctrl, cmd, 1, NULL);
 }
 
