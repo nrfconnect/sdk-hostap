@@ -41,6 +41,17 @@ static int wpa_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd, int min_args,
 {
 	char * buf = NULL;
 	int ret = 0;
+	bool interactive = 0;
+
+	for (int i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "interactive") == 0) {
+			interactive = 1;
+			argv[i] = NULL;
+			argc--;
+			break;
+		}
+	}
+
 	if (argc < min_args) {
 		wpa_printf(MSG_INFO, "Invalid %s command - at least %d argument%s "
 		       "required.\n", cmd, min_args,
@@ -58,7 +69,11 @@ static int wpa_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd, int min_args,
 		ret = -1;
 		goto out;
 	}
-	ret = wpa_ctrl_command(ctrl, buf);
+
+	if (interactive)
+		ret = wpa_ctrl_command_interactive(ctrl, buf);
+	else
+		ret = wpa_ctrl_command(ctrl, buf);
 
 out:
 	if (buf)
