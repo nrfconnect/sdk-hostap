@@ -1580,6 +1580,7 @@ int wpa_drv_zep_stop_ap(void *priv)
 	}
 
 	if_ctx->freq = 0;
+	if_ctx->beacon_set = false;
 out:
 	return ret;
 }
