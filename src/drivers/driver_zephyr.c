@@ -84,7 +84,7 @@ static int wpa_drv_zep_abort_scan(void *priv,
 				  u64 scan_cookie)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if_ctx = priv;
@@ -542,7 +542,7 @@ static int wpa_drv_register_frame(struct zep_drv_if_ctx *if_ctx,
 		u16 type, const u8 *match, size_t match_len,
 		bool multicast)
 {
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 
 	dev_ops = if_ctx->dev_ctx->config;
 
@@ -709,7 +709,7 @@ struct hostapd_hw_modes *wpa_drv_get_hw_feature_data(void *priv,
 		u16 *flags, u8 *dfs_domain)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if_ctx = priv;
@@ -794,7 +794,7 @@ static void *wpa_drv_zep_init(void *ctx,
 			      void *global_priv)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	const struct device *device = NULL;
 	struct zep_wpa_supp_dev_callbk_fns callbk_fns;
 
@@ -870,7 +870,7 @@ out:
 static void wpa_drv_zep_deinit(void *priv)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 
 	if_ctx = priv;
 
@@ -890,7 +890,7 @@ static void wpa_drv_zep_deinit(void *priv)
 static int wpa_drv_zep_scan2(void *priv, struct wpa_driver_scan_params *params)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int timeout = 0;
 	int ret = -1;
 
@@ -956,7 +956,7 @@ out:
 struct wpa_scan_results *wpa_drv_zep_get_scan_results2(void *priv)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if (!priv) {
@@ -1020,7 +1020,7 @@ static int wpa_drv_zep_deauthenticate(void *priv, const u8 *addr,
 				      u16 reason_code)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if ((!priv) || (!addr)) {
@@ -1049,7 +1049,7 @@ static int wpa_drv_zep_authenticate(void *priv,
 				    struct wpa_driver_auth_params *params)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	struct wpa_bss *curr_bss;
 	int ret = -1;
 
@@ -1105,7 +1105,7 @@ static int wpa_drv_zep_associate(void *priv,
 				 struct wpa_driver_associate_params *params)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if ((!priv) || (!params)) {
@@ -1151,7 +1151,7 @@ static int _wpa_drv_zep_set_key(void *priv,
 				size_t key_len)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	struct net_if *iface = NULL;
 	int ret = -1;
 
@@ -1232,7 +1232,7 @@ static int wpa_drv_zep_get_capa(void *priv,
 			       	struct wpa_driver_capa *capa)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if ((!priv) || (!capa)) {
@@ -1304,7 +1304,7 @@ static int wpa_drv_zep_set_supp_port(void *priv,
 				     int authorized)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	struct net_if *iface = NULL;
 
 	int ret;
@@ -1332,7 +1332,7 @@ static int wpa_drv_zep_set_supp_port(void *priv,
 static int wpa_drv_zep_signal_poll(void *priv, struct wpa_signal_info *si)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if (!priv) {
@@ -1373,7 +1373,7 @@ static int wpa_drv_zep_send_action(void *priv, unsigned int freq,
 		int no_cck)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 	u8 *buf;
 	struct ieee80211_hdr *hdr;
@@ -1421,7 +1421,7 @@ static int nl80211_get_ext_capab(void *priv, enum wpa_driver_if_type type,
 static int wpa_drv_zep_get_conn_info(void *priv, struct wpa_conn_info *ci)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
-	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
 
 	if (!priv) {
