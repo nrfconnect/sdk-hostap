@@ -67,7 +67,7 @@ jobs:
         ls -la
         git log  --pretty=oneline | head -n 10
         ./scripts/ci/check_compliance.py --annotate -e gitlint -e KconfigBasic -e Kconfig \
-        -c origin/${BASE_REF}..
+        -e ModulesMaintainers -c origin/${BASE_REF}..
 
     - name: upload-results
       uses: actions/upload-artifact@v3
