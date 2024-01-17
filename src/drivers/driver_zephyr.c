@@ -1612,6 +1612,7 @@ int wpa_drv_zep_deinit_ap(void *priv)
 		goto out;
 	}
 
+	if_ctx->beacon_set = false;
 out:
 	return ret;
 }
