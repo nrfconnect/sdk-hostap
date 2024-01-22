@@ -23,6 +23,10 @@
 #define SCAN_TIMEOUT 35
 #define GET_WIPHY_TIMEOUT 10
 
+int wpa_drv_zep_send_mlme(void *priv, const u8 *data, size_t data_len, int noack,
+	unsigned int freq, const u16 *csa_offs, size_t csa_offs_len, int no_encrypt,
+	unsigned int wait);
+
 void wpa_supplicant_event_wrapper(void *ctx,
 				enum wpa_event_type event,
 				union wpa_event_data *data)
@@ -1682,6 +1686,7 @@ int wpa_drv_zep_sta_deauth(void *priv, const u8 *own_addr, const u8 *addr, u16 r
 	struct zep_drv_if_ctx *if_ctx = priv;
 	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
+	struct ieee80211_mgmt mgmt;
 
 	if ((!priv) || (!addr)) {
 		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
@@ -1689,18 +1694,22 @@ int wpa_drv_zep_sta_deauth(void *priv, const u8 *own_addr, const u8 *addr, u16 r
 	}
 
 	dev_ops = if_ctx->dev_ctx->config;
-	if (!dev_ops->sta_deauth) {
-		wpa_printf(MSG_ERROR, "%s: sta_deauth op not supported\n",
-			   __func__);
-		goto out;
-	}
 
-	ret = dev_ops->sta_deauth(if_ctx->dev_priv, own_addr, addr, reason_code);
-	if (ret) {
-		wpa_printf(MSG_ERROR, "%s: sta_deauth op failed: %d\n", __func__, ret);
-		goto out;
-	}
+	wpa_printf(MSG_DEBUG, "%s: addr %p reason_code %d\n",
+		   __func__, addr, reason_code);
 
+	memset(&mgmt, 0, sizeof(mgmt));
+	mgmt.frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					  WLAN_FC_STYPE_DEAUTH);
+	memcpy(mgmt.da, addr, ETH_ALEN);
+	memcpy(mgmt.sa, own_addr, ETH_ALEN);
+	memcpy(mgmt.bssid, own_addr, ETH_ALEN);
+	mgmt.u.deauth.reason_code = host_to_le16(reason_code);
+
+	return wpa_drv_zep_send_mlme(priv, (u8 *) &mgmt,
+					    IEEE80211_HDRLEN +
+					    sizeof(mgmt.u.deauth), 0, if_ctx->freq, 0, 0,
+					    0, 0);
 out:
 	return ret;
 }
@@ -1710,6 +1719,7 @@ int wpa_drv_zep_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr, u16
 	struct zep_drv_if_ctx *if_ctx = priv;
 	const struct zep_wpa_supp_dev_ops *dev_ops;
 	int ret = -1;
+	struct ieee80211_mgmt mgmt;
 
 	if ((!priv) || (!addr)) {
 		wpa_printf(MSG_ERROR, "%s: Invalid params\n", __func__);
@@ -1717,18 +1727,22 @@ int wpa_drv_zep_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr, u16
 	}
 
 	dev_ops = if_ctx->dev_ctx->config;
-	if (!dev_ops->sta_disassoc) {
-		wpa_printf(MSG_ERROR, "%s: sta_disassoc op not supported\n",
-			   __func__);
-		goto out;
-	}
 
-	ret = dev_ops->sta_disassoc(if_ctx->dev_priv, own_addr, addr, reason_code);
-	if (ret) {
-		wpa_printf(MSG_ERROR, "%s: sta_disassoc op failed: %d\n", __func__, ret);
-		goto out;
-	}
+	wpa_printf(MSG_DEBUG, "%s: addr %p reason_code %d\n",
+		   __func__, addr, reason_code);
 
+	memset(&mgmt, 0, sizeof(mgmt));
+	mgmt.frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					  WLAN_FC_STYPE_DISASSOC);
+	memcpy(mgmt.da, addr, ETH_ALEN);
+	memcpy(mgmt.sa, own_addr, ETH_ALEN);
+	memcpy(mgmt.bssid, own_addr, ETH_ALEN);
+	mgmt.u.disassoc.reason_code = host_to_le16(reason_code);
+
+	return wpa_drv_zep_send_mlme(priv, (u8 *) &mgmt,
+					    IEEE80211_HDRLEN +
+					    sizeof(mgmt.u.disassoc), 0, if_ctx->freq, 0, 0,
+					    0, 0);
 out:
 	return ret;
 }
