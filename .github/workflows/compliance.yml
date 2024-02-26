@@ -59,15 +59,14 @@ jobs:
       id: compliance
       env:
         BASE_REF: ${{ github.base_ref }}
-      working-directory: sdk-zephyr
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       run: |
-        export ZEPHYR_BASE="$(dirname "$(pwd)")/sdk-zephyr"
+        export ZEPHYR_BASE="$(dirname "$(pwd)")/sdk-hostap/sdk-zephyr"
         # debug
         ls -la
         git log  --pretty=oneline | head -n 10
-        ./scripts/ci/check_compliance.py --annotate -e gitlint -e KconfigBasic -e Kconfig \
-        -e ModulesMaintainers -c origin/${BASE_REF}..
+        $ZEPHYR_BASE/scripts/ci/check_compliance.py --annotate -e ModulesMaintainers -e KconfigBasicNoModules -e KconfigBasic -e Kconfig \
+        -c origin/${BASE_REF}..
 
     - name: upload-results
       uses: actions/upload-artifact@v3
@@ -75,14 +74,16 @@ jobs:
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       with:
         name: compliance.xml
-        path: sdk-zephyr/compliance.xml
+        path: sdk-hostap
 
     - name: check-warns
       if: contains(github.event.pull_request.user.login, 'dependabot[bot]') != true
       run: |
+        echo $(pwd)
+        ls -la
         export ZEPHYR_BASE="$(dirname "$(pwd)")/sdk-hostap/sdk-zephyr"
-        if [[ ! -s $ZEPHYR_BASE/"compliance.xml" ]]; then
-          echo "::error ::compliance.xml not found in $ZEPHYR_BASE"
+        if [[ ! -s $(dirname "$(pwd)")/sdk-hostap/compliance.xml ]]; then
+          echo "::error ::compliance.xml not found in $(dirname "$(pwd)")/sdk-hostap/compliance.xml"
           exit 1;
         fi
 
