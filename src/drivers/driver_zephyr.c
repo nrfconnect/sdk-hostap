@@ -112,7 +112,8 @@ void wpa_supplicant_event_wrapper(void *ctx,
 					return;
 				}
 
-				os_memcpy(req_ies, data->assoc_info.req_ies, data->assoc_info.req_ies_len);
+				os_memcpy(req_ies, data->assoc_info.req_ies,
+						  data->assoc_info.req_ies_len);
 				data_tmp->assoc_info.req_ies = req_ies;
 			}
 			if (data->assoc_info.resp_ies) {
@@ -124,7 +125,8 @@ void wpa_supplicant_event_wrapper(void *ctx,
 					return;
 				}
 
-				os_memcpy(resp_ies, data->assoc_info.resp_ies, data->assoc_info.resp_ies_len);
+				os_memcpy(resp_ies, data->assoc_info.resp_ies,
+						  data->assoc_info.resp_ies_len);
 				data_tmp->assoc_info.resp_ies = resp_ies;
 			}
 			if (data->assoc_info.resp_frame) {
@@ -136,7 +138,8 @@ void wpa_supplicant_event_wrapper(void *ctx,
 					return;
 				}
 
-				os_memcpy(resp_frame, data->assoc_info.resp_frame, data->assoc_info.resp_frame_len);
+				os_memcpy(resp_frame, data->assoc_info.resp_frame,
+						  data->assoc_info.resp_frame_len);
 				data_tmp->assoc_info.resp_frame = resp_frame;
 			}
 		} else if (event == EVENT_ASSOC_REJECT) {
