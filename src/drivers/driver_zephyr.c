@@ -164,7 +164,8 @@ void wpa_supplicant_event_wrapper(void *ctx,
 					return;
 				}
 
-				os_memcpy(resp_ies, data->assoc_reject.resp_ies, data->assoc_reject.resp_ies_len);
+				os_memcpy(resp_ies, data->assoc_reject.resp_ies,
+						  data->assoc_reject.resp_ies_len);
 				data_tmp->assoc_reject.resp_ies = resp_ies;
 			}
 		} else if (event == EVENT_DEAUTH) {
