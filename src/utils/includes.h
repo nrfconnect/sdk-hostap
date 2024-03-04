@@ -49,11 +49,13 @@
 #include <zephyr/posix/sys/select.h>
 #include <zephyr/posix/sys/socket.h>
 #include <zephyr/posix/unistd.h>
+#include <zephyr/posix/signal.h>
 #else /* defined(CONFIG_POSIX_API) */
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/socket.h>
 #endif /* defined(CONFIG_POSIX_API) */
 #include <zephyr/shell/shell.h>
-#endif /* defined(CONFIG_ZEPHYR) */
 
+#define signal(a, b) (void)(b)
+#endif /* defined(CONFIG_ZEPHYR) */
 #endif /* INCLUDES_H */
