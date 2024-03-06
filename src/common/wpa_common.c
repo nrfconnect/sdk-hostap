@@ -476,8 +476,10 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 	} else {
 		wpa_printf(MSG_DEBUG, "WPA: PTK derivation using PRF(SHA1)");
 		if (sha1_prf(pmk, pmk_len, label, data, data_len, tmp,
-			     ptk_len) < 0)
+			     ptk_len) < 0) {
+			wpa_printf(MSG_ERROR, "No memory for PRF, PTK derivation failed");
 			return -1;
+		}
 	}
 
 	wpa_printf(MSG_DEBUG, "WPA: PTK derivation - A1=" MACSTR " A2=" MACSTR,
