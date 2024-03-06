@@ -193,6 +193,7 @@ static int hmac_vector(
 
 	md_info = mbedtls_md_info_from_type(md_type);
 	if (!md_info) {
+		wpa_printf(MSG_ERROR, "mbedtls_md_info_from_type() failed");
 		return -1;
 	}
 
