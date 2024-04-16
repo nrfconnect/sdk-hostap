@@ -557,9 +557,7 @@ void int_array_concat(int **res, const int *a);
 void int_array_sort_unique(int *a);
 void int_array_add_unique(int **res, int a);
 
-#ifdef CONFIG_ZEPHYR
-char *inet_ntoa(struct in_addr in);
-#else
+#ifndef CONFIG_ZEPHYR
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif
 
