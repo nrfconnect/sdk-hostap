@@ -250,6 +250,8 @@ struct zep_wpa_supp_dev_ops {
 
 	int (*register_mgmt_frame)(void *if_priv, u16 frame_type,
 			size_t match_len, const u8 *match);
+
+	int (*get_inact_sec)(void *if_priv, const u8 *addr);
 };
 
 #endif /* DRIVER_ZEPHYR_H */
