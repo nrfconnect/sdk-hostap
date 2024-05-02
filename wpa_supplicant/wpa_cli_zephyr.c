@@ -72,8 +72,6 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 		/* Remove the LF */
 		os_memcpy(resp, buf, len - 1);
 		resp[len - 1] = '\0';
-		if (strncmp(resp, "FAIL", 4) == 0)
-			return -3;
 	}
 
 	if (print) {
@@ -81,6 +79,12 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print, 
 			if (buf[0] != '\0')
 				printf("%s", buf);
 	}
+
+	if (len > 1 && (strncmp(resp, "FAIL", 4) == 0)) {
+		wpa_printf(MSG_ERROR, "Command failed: %s", resp);
+		return -3;
+	}
+
 	return 0;
 }
 
