@@ -9,7 +9,7 @@
 #ifndef OS_H
 #define OS_H
 
-typedef uint64_t os_time_t;
+typedef int64_t os_time_t;
 
 /**
  * os_sleep - Sleep (sec, usec)
