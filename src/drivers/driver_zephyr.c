@@ -1525,10 +1525,14 @@ static int wpa_drv_zep_set_supp_port(void *priv,
 				     authorized,
 				     if_ctx->bssid);
 
-#ifdef CONFIG_NET_DHCPV4
-	if (authorized) {
-		net_dhcpv4_restart(iface);
-    }
+#if defined(CONFIG_NET_DHCPV4) && defined(CONFIG_SME)
+	struct wpa_supplicant *wpa_s = if_ctx->supp_if_ctx;
+	/* Need DHCP client in STA mode only */
+	if (wpa_s && wpa_s->sme.ssid_len > 0) {
+		if (authorized) {
+			net_dhcpv4_restart(iface);
+		}
+	}
 #endif
 
 	return ret;
