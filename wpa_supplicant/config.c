@@ -4430,7 +4430,7 @@ struct wpa_config * wpa_config_alloc_empty(const char *ctrl_interface,
 	if (driver_param)
 		config->driver_param = os_strdup(driver_param);
 	config->gas_rand_addr_lifetime = DEFAULT_RAND_ADDR_LIFETIME;
-
+	config->bss_max_idle_period = DEFAULT_BSS_MAX_IDLE_PERIOD;
 	return config;
 }
 
@@ -5265,6 +5265,7 @@ static const struct global_parse_data global_fields[] = {
 	{ INT_RANGE(pasn_corrupt_mic, 0, 1), 0 },
 #endif /* CONFIG_TESTING_OPTIONS */
 #endif /* CONFIG_PASN */
+	{ INT(bss_max_idle_period), 0 },
 };
 
 #undef FUNC

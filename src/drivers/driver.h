@@ -1204,6 +1204,9 @@ struct wpa_driver_associate_params {
 	 */
 	int sae_pwe;
 
+	/**
+	 * bss_max_idle_period - Maximum idle period which STA currently supports.
+	 */
 	unsigned short bss_max_idle_period;
 };
 
