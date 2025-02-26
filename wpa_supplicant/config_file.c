@@ -1559,6 +1559,9 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 	if (config->wowlan_disconnect_on_deinit)
 		fprintf(f, "wowlan_disconnect_on_deinit=%d\n",
 			config->wowlan_disconnect_on_deinit);
+	if (config->bss_max_idle_period != DEFAULT_BSS_MAX_IDLE_PERIOD)
+		fprintf(f, "bss_max_idle_period=%u\n",
+			config->bss_max_idle_period);
 }
 
 #endif /* CONFIG_NO_CONFIG_WRITE */
