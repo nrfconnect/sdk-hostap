@@ -1607,7 +1607,7 @@ static void ieee802_11_rx_bss_trans_mgmt_req(struct wpa_supplicant *wpa_s,
 		* timestamp nor will it expire old BSSs.
 		*/
 		wpa_supplicant_update_scan_results(wpa_s, NULL);
-		if (wnm_scan_process(wpa_s, true) > 0)
+		if (wnm_scan_process(wpa_s, false) > 0)
 			return;
 		wpa_printf(MSG_DEBUG,
 			   "WNM: No valid match in previous scan results - try a new scan");
