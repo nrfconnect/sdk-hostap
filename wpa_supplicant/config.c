@@ -4664,6 +4664,21 @@ struct wpa_config * wpa_config_alloc_empty(const char *ctrl_interface,
 	config->p2p_go_max_inactivity = DEFAULT_P2P_GO_MAX_INACTIVITY;
 	config->p2p_optimize_listen_chan = DEFAULT_P2P_OPTIMIZE_LISTEN_CHAN;
 	config->p2p_go_ctwindow = DEFAULT_P2P_GO_CTWINDOW;
+#ifdef CONFIG_P2P
+	/* Provide a valid WPS/P2P identity so probe requests/responses do not
+	 * advertise an empty device name and a zero Primary Device Type.
+	 */
+	if (!config->device_name)
+		config->device_name = os_strdup("nRF-Wi-Fi-P2P");
+	if (!config->manufacturer)
+		config->manufacturer = os_strdup("Nordic Semiconductor");
+	if (!config->model_name)
+		config->model_name = os_strdup("nRF Wi-Fi");
+	if (!config->model_number)
+		config->model_number = os_strdup("nRF71");
+	/* 1-0050F204-1 => Category: Computer, OUI: WFA, Sub-category: PC */
+	wps_dev_type_str2bin("1-0050F204-1", config->device_type);
+#endif /* CONFIG_P2P */
 	config->bss_max_count = DEFAULT_BSS_MAX_COUNT;
 	config->bss_expiration_age = DEFAULT_BSS_EXPIRATION_AGE;
 	config->bss_expiration_scan_count = DEFAULT_BSS_EXPIRATION_SCAN_COUNT;
