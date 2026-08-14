@@ -508,6 +508,15 @@ static int wpas_p2p_scan(void *ctx, enum p2p_scan_type type, int freq,
 		break;
 	}
 
+	wpa_printf(MSG_INFO,
+		   "P2P-FIND: SEARCH scan trigger type=%d(%s) num_chan=%u freq=%d",
+		   type,
+		   type == P2P_SCAN_SOCIAL ? "SOCIAL" :
+		   type == P2P_SCAN_FULL ? "FULL" :
+		   type == P2P_SCAN_SPECIFIC ? "SPECIFIC" :
+		   type == P2P_SCAN_SOCIAL_PLUS_ONE ? "SOCIAL+1" : "?",
+		   num_channels, freq);
+
 	ielen = p2p_scan_ie_buf_len(wpa_s->global->p2p);
 	ies = wpabuf_alloc(wpabuf_len(wps_ie) + ielen);
 	if (ies == NULL) {
