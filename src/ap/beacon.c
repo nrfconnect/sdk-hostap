@@ -1451,6 +1451,10 @@ void handle_probe_req(struct hostapd_data *hapd,
 		sta_track_add(hapd->iface, mgmt->sa, ssi_signal);
 	ie_len = len - IEEE80211_HDRLEN;
 
+	wpa_printf(MSG_INFO,
+		   "P2P-GO: RX-ProbeReq(pre-filter) from " MACSTR " signal=%d len=%u",
+		   MAC2STR(mgmt->sa), ssi_signal, (unsigned int)ie_len);
+
 	ret = hostapd_allowed_address(hapd, mgmt->sa, (const u8 *) mgmt, len,
 				      &rad_info, 1);
 	if (ret == HOSTAPD_ACL_REJECT) {
@@ -1463,8 +1467,13 @@ void handle_probe_req(struct hostapd_data *hapd,
 	for (i = 0; hapd->probereq_cb && i < hapd->num_probereq_cb; i++)
 		if (hapd->probereq_cb[i].cb(hapd->probereq_cb[i].ctx,
 					    mgmt->sa, mgmt->da, mgmt->bssid,
-					    ie, ie_len, ssi_signal) > 0)
+					    ie, ie_len, ssi_signal) > 0) {
+			wpa_printf(MSG_INFO,
+				   "P2P-GO: ProbeReq from " MACSTR
+				   " consumed by probereq_cb (P2P) -> no probe resp in handle_probe_req",
+				   MAC2STR(mgmt->sa));
 			return;
+		}
 
 	if (!hapd->conf->send_probe_response)
 		return;
@@ -1482,6 +1491,16 @@ void handle_probe_req(struct hostapd_data *hapd,
 		return;
 	}
 
+	if (elems.p2p || elems.ssid_len > 0) {
+		wpa_printf(MSG_INFO,
+			   "P2P-GO: ProbeReq detail from " MACSTR
+			   " ssid_len=%u ssid='%s' is_p2p=%d has_wps=%d ds=%d",
+			   MAC2STR(mgmt->sa), (unsigned int)elems.ssid_len,
+			   wpa_ssid_txt(elems.ssid, elems.ssid_len),
+			   !!elems.p2p, !!elems.wps_ie,
+			   elems.ds_params ? elems.ds_params[0] : -1);
+	}
+
 	/*
 	 * No need to reply if the Probe Request frame was sent on an adjacent
 	 * channel. IEEE Std 802.11-2012 describes this as a requirement for an
@@ -1497,8 +1516,10 @@ void handle_probe_req(struct hostapd_data *hapd,
 	    (hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G ||
 	     hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211B) &&
 	    hapd->iconf->channel != elems.ds_params[0]) {
-		wpa_printf(MSG_DEBUG,
-			   "Ignore Probe Request due to DS Params mismatch: chan=%u != ds.chan=%u",
+		wpa_printf(MSG_INFO,
+			   "P2P-GO: DROP ProbeReq from " MACSTR
+			   " DS Params mismatch: chan=%u != ds.chan=%u",
+			   MAC2STR(mgmt->sa),
 			   hapd->iconf->channel, elems.ds_params[0]);
 		return;
 	}
@@ -1508,9 +1529,9 @@ void handle_probe_req(struct hostapd_data *hapd,
 		struct wpabuf *wps;
 		wps = ieee802_11_vendor_ie_concat(ie, ie_len, WPS_DEV_OUI_WFA);
 		if (wps && !p2p_group_match_dev_type(hapd->p2p_group, wps)) {
-			wpa_printf(MSG_MSGDUMP, "P2P: Ignore Probe Request "
-				   "due to mismatch with Requested Device "
-				   "Type");
+			wpa_printf(MSG_INFO, "P2P-GO: DROP ProbeReq from " MACSTR
+				   " mismatch with Requested Device Type",
+				   MAC2STR(mgmt->sa));
 			wpabuf_free(wps);
 			return;
 		}
@@ -1521,8 +1542,9 @@ void handle_probe_req(struct hostapd_data *hapd,
 		struct wpabuf *p2p;
 		p2p = ieee802_11_vendor_ie_concat(ie, ie_len, P2P_IE_VENDOR_TYPE);
 		if (p2p && !p2p_group_match_dev_id(hapd->p2p_group, p2p)) {
-			wpa_printf(MSG_MSGDUMP, "P2P: Ignore Probe Request "
-				   "due to mismatch with Device ID");
+			wpa_printf(MSG_INFO, "P2P-GO: DROP ProbeReq from " MACSTR
+				   " mismatch with Device ID",
+				   MAC2STR(mgmt->sa));
 			wpabuf_free(p2p);
 			return;
 		}
@@ -1567,7 +1589,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			 elems.short_ssid_list, elems.short_ssid_list_len);
 	if (res == NO_SSID_MATCH) {
 		if (!(mgmt->da[0] & 0x01)) {
-			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
+			wpa_printf(MSG_INFO, "P2P-GO: DROP ProbeReq from " MACSTR
 				   " for foreign SSID '%s' (DA " MACSTR ")%s",
 				   MAC2STR(mgmt->sa),
 				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
@@ -1691,8 +1713,20 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	hostapd_free_probe_resp_params(&params);
 
-	if (!params.resp)
+	if (!params.resp) {
+		wpa_printf(MSG_INFO,
+			   "P2P-GO: Probe Request from " MACSTR
+			   " is_p2p=%d -> NO response generated (dropped)",
+			   MAC2STR(mgmt->sa), !!elems.p2p);
 		return;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "P2P-GO: Probe Request from " MACSTR
+		   " is_p2p=%d ssid=%s -> sending Probe Response len=%u",
+		   MAC2STR(mgmt->sa), !!elems.p2p,
+		   elems.ssid_len == 0 ? "broadcast" : "match",
+		   (unsigned int)params.resp_len);
 
 	/*
 	 * If this is a broadcast probe request, apply no ack policy to avoid

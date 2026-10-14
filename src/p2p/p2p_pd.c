@@ -21,7 +21,7 @@
  * in case the peer is not listening.
  */
 #ifndef MAX_PROV_DISC_REQ_RETRIES
-#define MAX_PROV_DISC_REQ_RETRIES 120
+#define MAX_PROV_DISC_REQ_RETRIES 2
 #endif
 
 
