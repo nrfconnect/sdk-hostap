@@ -90,6 +90,8 @@ class SigmaDut:
     def run_cmd(self, cmd, port=9000, timeout=2, dump_dev=None):
         if cmd.startswith('ap_config_commit'):
             self.ap = True
+        if cmd.startswith('ap_reset_default'):
+            self.ap = True
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM,
                              socket.IPPROTO_TCP)
         sock.settimeout(1 if dump_dev else timeout)
@@ -639,6 +641,13 @@ def test_sigma_dut_ap_psk_deauth(dev, apdev, params):
 
 def test_sigma_dut_eap_ttls(dev, apdev, params):
     """sigma_dut controlled STA and EAP-TTLS parameters"""
+    run_sigma_dut_eap_ttls(dev, apdev, params)
+
+def test_sigma_dut_eap_ttls_all_akm_suites(dev, apdev, params):
+    """sigma_dut controlled STA and EAP-TTLS parameters and all AKM suites"""
+    run_sigma_dut_eap_ttls(dev, apdev, params, all_akm_suites=True)
+
+def run_sigma_dut_eap_ttls(dev, apdev, params, all_akm_suites=False):
     check_domain_match(dev[0])
     logdir = params['logdir']
 
@@ -668,7 +677,8 @@ def test_sigma_dut_eap_ttls(dev, apdev, params):
 
     ifname = dev[0].ifname
     with SigmaDut(ifname, cert_path=logdir) as dut:
-        cmd = "sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA,sigma_dut_eap_ttls.ca.pem,username,DOMAIN\mschapv2 user,password,password" % (ifname, ssid)
+        key_mgmt = "" if all_akm_suites else ",keymgmttype,wpa2"
+        cmd = "sta_set_security,type,eapttls,interface,%s,ssid,%s%s,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA,sigma_dut_eap_ttls.ca.pem,username,DOMAIN\\mschapv2 user,password,password" % (ifname, ssid, key_mgmt)
 
         tests = ["",
                  ",Domain,server.w1.fi",
@@ -780,7 +790,7 @@ def test_sigma_dut_suite_b_rsa(dev, apdev, params):
         tests = ["",
                  ",TLSCipher,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]
         tls = dev[0].request("GET tls_library")
-        if "run=BoringSSL" not in tls:
+        if "run=BoringSSL" not in tls and "run=OpenSSL 4" not in tls:
             tests += [",TLSCipher,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"]
         for extra in tests:
             dut.cmd_check("sta_reset_default,interface,%s,prog,PMF" % ifname)
@@ -1143,8 +1153,7 @@ def test_sigma_dut_ap_psk_sae_ft(dev, apdev, params):
 
 def test_sigma_dut_owe(dev, apdev):
     """sigma_dut controlled OWE station"""
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
 
     ifname = dev[0].ifname
     with SigmaDut(ifname) as dut:
@@ -1204,8 +1213,7 @@ def test_sigma_dut_owe(dev, apdev):
 
 def test_sigma_dut_owe_ptk_workaround(dev, apdev):
     """sigma_dut controlled OWE station with PTK workaround"""
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
 
     params = {"ssid": "owe",
               "wpa": "2",
@@ -1230,8 +1238,7 @@ def test_sigma_dut_ap_owe(dev, apdev, params):
     """sigma_dut controlled AP with OWE"""
     logdir = os.path.join(params['logdir'],
                           "sigma_dut_ap_owe.sigma-hostapd")
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
     with HWSimRadio() as (radio, iface), \
          SigmaDut(iface, hostapd_logdir=logdir) as dut:
         dut.cmd_check("ap_reset_default,NAME,AP,Program,WPA3")
@@ -1251,8 +1258,7 @@ def test_sigma_dut_ap_owe(dev, apdev, params):
 
 def test_sigma_dut_ap_owe_ecgroupid(dev, apdev, params):
     """sigma_dut controlled AP with OWE and ECGroupID"""
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
     logdir = params['prefix'] + ".sigma-hostapd"
     with HWSimRadio() as (radio, iface), \
          SigmaDut(iface, hostapd_logdir=logdir) as dut:
@@ -1283,8 +1289,7 @@ def test_sigma_dut_ap_owe_ecgroupid(dev, apdev, params):
 
 def test_sigma_dut_ap_owe_ptk_workaround(dev, apdev, params):
     """sigma_dut controlled AP with OWE PTK workaround"""
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
     logdir = params['prefix'] + ".sigma-hostapd"
     with HWSimRadio() as (radio, iface), \
          SigmaDut(iface, owe_ptk_workaround=True, hostapd_logdir=logdir) as dut:
@@ -1299,8 +1304,7 @@ def test_sigma_dut_ap_owe_ptk_workaround(dev, apdev, params):
 
 def test_sigma_dut_ap_owe_transition_mode(dev, apdev, params):
     """sigma_dut controlled AP with OWE and transition mode"""
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
     logdir = os.path.join(params['logdir'],
                           "sigma_dut_ap_owe_transition_mode.sigma-hostapd")
     with HWSimRadio() as (radio, iface), \
@@ -1325,8 +1329,7 @@ def test_sigma_dut_ap_owe_transition_mode(dev, apdev, params):
 
 def test_sigma_dut_ap_owe_transition_mode_2(dev, apdev, params):
     """sigma_dut controlled AP with OWE and transition mode (2)"""
-    if "OWE" not in dev[0].get_capability("key_mgmt"):
-        raise HwsimSkip("OWE not supported")
+    check_owe_capab(dev[0])
     logdir = os.path.join(params['logdir'],
                           "sigma_dut_ap_owe_transition_mode_2.sigma-hostapd")
     with HWSimRadio() as (radio, iface), \
@@ -3249,6 +3252,7 @@ def test_sigma_dut_ap_dpp_self_config_connector_privacy(dev, apdev, params):
          SigmaDut(iface, hostapd_logdir=logdir) as dut:
         dev[0].set("dpp_connector_privacy_default", "1")
         run_sigma_dut_ap_dpp_self_config(dut, dev, apdev)
+        dev[0].set("dpp_connector_privacy_default", "0")
 
 def run_sigma_dut_ap_dpp_self_config(dut, dev, apdev):
     check_dpp_capab(dev[0])
@@ -4317,61 +4321,6 @@ def test_sigma_dut_sta_scan_wait_completion(dev, apdev):
         cmd = "sta_scan,Interface,%s,ChnlFreq,2412,WaitCompletion,1" % dev[0].ifname
         res = dut.run_cmd(cmd, timeout=10)
 
-def test_sigma_dut_ap_osen(dev, apdev, params):
-    """sigma_dut controlled AP with OSEN"""
-    logdir = os.path.join(params['logdir'],
-                          "sigma_dut_ap_osen.sigma-hostapd")
-    with HWSimRadio() as (radio, iface), \
-         SigmaDut(iface, hostapd_logdir=logdir) as dut:
-        dut.cmd_check("ap_reset_default")
-        dut.cmd_check("ap_set_wireless,NAME,AP,CHANNEL,1,SSID,test-hs20,MODE,11ng")
-        dut.cmd_check("ap_set_radius,NAME,AP,IPADDR,127.0.0.1,PORT,1812,PASSWORD,radius")
-        dut.cmd_check("ap_set_security,NAME,AP,KEYMGNT,OSEN,PMF,Optional")
-        dut.cmd_check("ap_config_commit,NAME,AP")
-
-        # RSN-OSEN (for OSU)
-        dev[0].connect("test-hs20", proto="OSEN", key_mgmt="OSEN",
-                       pairwise="CCMP", group="GTK_NOT_USED",
-                       eap="WFA-UNAUTH-TLS", identity="osen@example.com",
-                       ca_cert="auth_serv/ca.pem", scan_freq="2412")
-
-def test_sigma_dut_ap_eap_osen(dev, apdev, params):
-    """sigma_dut controlled AP with EAP+OSEN"""
-    logdir = os.path.join(params['logdir'],
-                          "sigma_dut_ap_eap_osen.sigma-hostapd")
-    with HWSimRadio() as (radio, iface), \
-         SigmaDut(iface, bridge="ap-br0", hostapd_logdir=logdir) as dut:
-        try:
-            dut.cmd_check("ap_reset_default")
-            dut.cmd_check("ap_set_wireless,NAME,AP,CHANNEL,1,SSID,test-hs20,MODE,11ng")
-            dut.cmd_check("ap_set_radius,NAME,AP,IPADDR,127.0.0.1,PORT,1812,PASSWORD,radius")
-            dut.cmd_check("ap_set_security,NAME,AP,KEYMGNT,WPA2-ENT-OSEN,PMF,Optional")
-            dut.cmd_check("ap_config_commit,NAME,AP")
-
-            subprocess.call(['brctl', 'setfd', 'ap-br0', '0'])
-            subprocess.call(['ip', 'link', 'set', 'dev', 'ap-br0', 'up'])
-
-            # RSN-OSEN (for OSU)
-            dev[0].connect("test-hs20", proto="OSEN", key_mgmt="OSEN",
-                           pairwise="CCMP",
-                           eap="WFA-UNAUTH-TLS", identity="osen@example.com",
-                           ca_cert="auth_serv/ca.pem", ieee80211w='2',
-                           scan_freq="2412")
-            # RSN-EAP (for data connection)
-            dev[1].connect("test-hs20", key_mgmt="WPA-EAP", eap="TTLS",
-                           identity="hs20-test", password="password",
-                           ca_cert="auth_serv/ca.pem", phase2="auth=MSCHAPV2",
-                           ieee80211w='2', scan_freq="2412")
-
-            hwsim_utils.test_connectivity(dev[0], dev[1], broadcast=False,
-                                          success_expected=False, timeout=1)
-
-        finally:
-            subprocess.call(['ip', 'link', 'set', 'dev', 'ap-br0', 'down'],
-                            stderr=open('/dev/null', 'w'))
-            subprocess.call(['brctl', 'delbr', 'ap-br0'],
-                            stderr=open('/dev/null', 'w'))
-
 def test_sigma_dut_ap_eap(dev, apdev, params):
     """sigma_dut controlled AP WPA2-Enterprise"""
     logdir = os.path.join(params['logdir'], "sigma_dut_ap_eap.sigma-hostapd")
@@ -4584,14 +4533,11 @@ def test_sigma_dut_ap_hs20(dev, apdev, params):
         dut.cmd_check("ap_set_radius,NAME,AP,WLAN_TAG,1,IPADDR,127.0.0.1,PORT,1812,PASSWORD,radius")
         dut.cmd_check("ap_set_security,NAME,AP,WLAN_TAG,1,KEYMGNT,WPA2-ENT")
         dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,1,HESSID,02:12:34:56:78:9a,NAI_REALM_LIST,1,OPER_NAME,1")
-        dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,1,OSU_SERVER_URI,https://example.com/ https://example.org/,OSU_SSID,test-osu,OSU_METHOD,SOAP SOAP,OSU_PROVIDER_LIST,10,OSU_PROVIDER_NAI_LIST,4")
         dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,1,NET_AUTH_TYPE,2")
         dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,1,VENUE_NAME,1")
         dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,1,DOMAIN_LIST,example.com")
-        dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,1,OPERATOR_ICON_METADATA,1")
         dut.cmd_check("ap_set_wireless,NAME,AP,WLAN_TAG,2,CHANNEL,1,SSID,test-osu,MODE,11ng")
         dut.cmd_check("ap_set_security,NAME,AP,WLAN_TAG,2,KEYMGNT,NONE")
-        dut.cmd_check("ap_set_hs2,NAME,AP,WLAN_TAG,2,OSU,1")
         dut.cmd_check("ap_config_commit,NAME,AP")
 
         with open("/tmp/sigma_dut-ap.conf", "rb") as f, \
@@ -4629,7 +4575,7 @@ def test_sigma_dut_eap_ttls_uosc(dev, apdev, params):
 
     ifname = dev[0].ifname
     with SigmaDut(dev=dev[0], cert_path=logdir) as dut:
-        cmd = "sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,username,DOMAIN\mschapv2 user,password,password,ServerCert,sigma_dut_eap_ttls_uosc.incorrect.pem" % (ifname, ssid)
+        cmd = "sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,username,DOMAIN\\mschapv2 user,password,password,ServerCert,sigma_dut_eap_ttls_uosc.incorrect.pem" % (ifname, ssid)
 
         dut.cmd_check("sta_reset_default,interface,%s,prog,WPA3" % ifname)
         dut.cmd_check("sta_set_ip_config,interface,%s,dhcp,0,ip,127.0.0.11,mask,255.255.255.0" % ifname)
@@ -4695,7 +4641,7 @@ def run_sigma_dut_eap_ttls_uosc_tod(dev, apdev, params, tofu):
 
     ifname = dev[0].ifname
     with SigmaDut(dev=dev[0], cert_path=logdir) as dut:
-        cmd = ("sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA," + name + ".ca.pem,username,DOMAIN\mschapv2 user,password,password,ServerCert," + name + ".server.pem") % (ifname, ssid)
+        cmd = ("sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA," + name + ".ca.pem,username,DOMAIN\\mschapv2 user,password,password,ServerCert," + name + ".server.pem") % (ifname, ssid)
         dut.cmd_check("sta_reset_default,interface,%s,prog,WPA3" % ifname)
         dut.cmd_check("sta_set_ip_config,interface,%s,dhcp,0,ip,127.0.0.11,mask,255.255.255.0" % ifname)
         dut.cmd_check(cmd)
@@ -4767,7 +4713,7 @@ def run_sigma_dut_eap_ttls_uosc_initial_tod(dev, apdev, params, tofu):
 
     ifname = dev[0].ifname
     with SigmaDut(dev=dev[0], cert_path=logdir) as dut:
-        cmd = ("sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA," + name + ".ca.pem,username,DOMAIN\mschapv2 user,password,password") % (ifname, ssid)
+        cmd = ("sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA," + name + ".ca.pem,username,DOMAIN\\mschapv2 user,password,password") % (ifname, ssid)
         dut.cmd_check("sta_reset_default,interface,%s,prog,WPA3" % ifname)
         dut.cmd_check("sta_set_ip_config,interface,%s,dhcp,0,ip,127.0.0.11,mask,255.255.255.0" % ifname)
         dut.cmd_check(cmd)
@@ -4806,7 +4752,7 @@ def test_sigma_dut_eap_ttls_uosc_ca_mistrust(dev, apdev, params):
 
     ifname = dev[0].ifname
     with SigmaDut(dev=dev[0], cert_path=logdir) as dut:
-        cmd = "sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA,sigma_dut_eap_ttls_uosc_ca_mistrust.ca.pem,username,DOMAIN\mschapv2 user,password,password,domainSuffix,w1.fi" % (ifname, ssid)
+        cmd = "sta_set_security,type,eapttls,interface,%s,ssid,%s,keymgmttype,wpa2,encType,AES-CCMP,PairwiseCipher,AES-CCMP-128,trustedRootCA,sigma_dut_eap_ttls_uosc_ca_mistrust.ca.pem,username,DOMAIN\\mschapv2 user,password,password,domainSuffix,w1.fi" % (ifname, ssid)
         dut.cmd_check("sta_reset_default,interface,%s,prog,WPA3" % ifname)
         dut.cmd_check("sta_set_ip_config,interface,%s,dhcp,0,ip,127.0.0.11,mask,255.255.255.0" % ifname)
         dut.cmd_check(cmd)
@@ -5401,7 +5347,8 @@ def test_sigma_dut_ft_rsnxe_used_mismatch(dev, apdev):
             raise Exception("Unexpected number of association attempts for the first FT protocol exchange (expecting success)")
 
         dut.cmd_check("sta_set_rfeature,interface,%s,prog,WPA3,ReassocReq_RSNXE_Used,1" % ifname)
-        dut.cmd_check("sta_reassoc,interface,%s,Channel,1,bssid,%s" % (ifname, bssid))
+        dut.cmd_check("sta_reassoc,interface,%s,Channel,1,bssid,%s" % (ifname, bssid),
+                      timeout=20)
         count = 0
         for i in range(5):
             ev = dev[0].wait_event(["Trying to associate",
@@ -5831,4 +5778,25 @@ def test_sigma_dut_wpa3_inject_frame(dev, apdev):
         dut.run_cmd("dev_send_frame,interface,%s,program,WPA3,framename,SAQueryReq,OCIChannel,1" % ifname)
         dut.run_cmd("dev_send_frame,interface,%s,program,WPA3,framename,ReassocReq" % ifname)
         hwsim_utils.test_connectivity(dev[0], hapd)
+        dut.cmd_check("sta_reset_default,interface," + ifname)
+
+def test_sigma_dut_sae_random_rsnxe(dev, apdev):
+    """sigma_dut controlled SAE association and random RSNXE"""
+    check_sae_capab(dev[0])
+
+    ifname = dev[0].ifname
+    with SigmaDut(ifname) as dut:
+        ssid = "test-sae"
+        params = hostapd.wpa3_params(ssid=ssid, password="12345678")
+        params['sae_groups'] = '19 20 21'
+        hapd = hostapd.add_ap(apdev[0], params)
+
+        dut.cmd_check("sta_reset_default,interface,%s" % ifname)
+        dut.cmd_check("sta_set_ip_config,interface,%s,dhcp,0,ip,127.0.0.11,mask,255.255.255.0" % ifname)
+        dut.cmd_check("sta_set_security,interface,%s,ssid,%s,passphrase,%s,type,SAE,encpType,aes-ccmp,keymgmttype,wpa2" % (ifname, "test-sae", "12345678"))
+        dut.cmd_check("sta_preset_testparameters,interface,%s,RSNXE_Rand,20" % ifname)
+        dut.cmd_check("sta_associate,interface,%s,ssid,%s,channel,1" % (ifname, "test-sae"),
+                      timeout=10)
+        dut.wait_connected()
+        dut.cmd_check("sta_disconnect,interface," + ifname)
         dut.cmd_check("sta_reset_default,interface," + ifname)

@@ -2477,7 +2477,8 @@ def test_ap_wpa2_psk_supp_proto_too_long_gtk_in_group_msg(dev, apdev):
     counter += 1
     send_eapol(dev[0], bssid, build_eapol(msg))
     ev = dev[0].wait_event(["WPA: Unsupported CCMP Group Cipher key length 33",
-                            "RSN: Too long GTK in GTK KDE (len=33)"])
+                            "RSN: Too long GTK in GTK KDE (len=33)",
+                            "RSN: Invalid GTK KDE length (35) in Group Key msg 1/2"])
     if ev is None:
         raise Exception("Too long GTK KDE not reported")
     dev[0].wait_disconnected(timeout=1)
@@ -2639,6 +2640,7 @@ def find_wpas_process(dev):
 
 def read_process_memory(pid, key=None):
     buf = []
+    buflen = 0
     logger.info("Reading process memory (pid=%d)" % pid)
     with open('/proc/%d/maps' % pid, 'r') as maps, \
          open('/proc/%d/mem' % pid, 'rb') as mem:
@@ -2657,7 +2659,7 @@ def read_process_memory(pid, key=None):
                 continue
             for name in ["[heap]", "[stack]"]:
                 if name in l:
-                    logger.info("%s 0x%x-0x%x is at %d-%d" % (name, start, end, len(buf), len(buf) + (end - start)))
+                    logger.info("%s 0x%x-0x%x is at %d-%d" % (name, start, end, buflen, buflen + (end - start)))
 
             if end - start >= 256 * 1024 * 1024:
                 logger.info("Large memory block of >= 256MiB, assuming ASAN shadow memory")
@@ -2670,9 +2672,10 @@ def read_process_memory(pid, key=None):
                 logger.info("Could not read mem: start=%d end=%d: %s" % (start, end, str(e)))
                 continue
             buf.append(data)
+            buflen += len(data)
             if key and key in data:
                 logger.info("Key found in " + l)
-    logger.info("Total process memory read: %d bytes" % len(buf))
+    logger.info("Total process memory read: %d bytes" % buflen)
     return b''.join(buf)
 
 def verify_not_present(buf, key, fname, keyname):
@@ -3723,7 +3726,8 @@ def test_ap_wpa2_psk_4addr(dev, apdev):
         subprocess.check_call(['ip', 'link', 'set', 'dev', br_ifname, 'up'])
         subprocess.check_call(['brctl', 'addif', br_ifname, ifname])
         cmd = subprocess.Popen(['brctl', 'show'], stdout=subprocess.PIPE)
-        res = cmd.stdout.read().decode()
+        out, err = cmd.communicate()
+        res = out.decode()
     finally:
         subprocess.call(['brctl', 'delif', br_ifname, ifname])
         subprocess.call(['ip', 'link', 'set', 'dev', br_ifname, 'down'])
@@ -3755,6 +3759,21 @@ def test_rsn_eapol_m3_extra(dev, apdev):
     params = hostapd.wpa2_params(ssid=ssid, passphrase=passphrase)
     # Add a reserved element and KDE into EAPOL-Key msg 3/4
     params['eapol_m3_elements'] = '02051122334455' + 'dd05000facff11'
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].connect(ssid, psk=passphrase, scan_freq="2412")
+
+def test_rsn_eapol_m3_extra_long(dev, apdev):
+    """Long extra KDE in EAPOL-Key msg 3/4"""
+    ssid = "test-rsn"
+    passphrase = 'qwertyuiop'
+    params = hostapd.wpa2_params(ssid=ssid, passphrase=passphrase)
+    # Add a reserved KDEs into EAPOL-Key msg 3/4
+    val = 'dd0507c0d19311'
+    val += 'ddff69b847070102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafb'
+    val += 'dd085ba59d7911223344'
+    val += 'dd0a000face4112233445566'
+    params['eapol_m3_elements'] = val
     hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].connect(ssid, psk=passphrase, scan_freq="2412")
@@ -3834,3 +3853,14 @@ def test_rsn_eapol_m4_encrypt(dev, apdev):
     dev[0].set("encrypt_eapol_m4", "1")
     dev[0].connect(ssid, psk=passphrase, scan_freq="2412")
     hapd.wait_sta()
+
+def test_ap_wpa2_psk_tkip_only_as_group(dev, apdev):
+    """WPA2-PSK AP and TKIP as a group cipher, but not pairwise"""
+    skip_without_tkip(dev[0])
+    params = {"ssid": "wpapsk", "wpa": "2", "wpa_key_mgmt": "WPA-PSK",
+              "rsn_pairwise": "CCMP", "group_cipher": "TKIP",
+              "wpa_passphrase": "1234567890"}
+    hapd = hostapd.add_ap(apdev[0], params)
+    dev[0].connect("wpapsk", psk="1234567890", scan_freq="2412")
+    hapd.wait_sta()
+    hwsim_utils.test_connectivity(dev[0], hapd)

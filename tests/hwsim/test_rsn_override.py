@@ -1,5 +1,5 @@
 # Test cases for RSNE/RSNXE overriding
-# Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # This software may be distributed under the terms of the BSD license.
 # See README for more details.
@@ -137,6 +137,7 @@ def run_rsn_override_mld(dev, apdev, mixed, only_sta=False,
 
         wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
         wpas.interface_add(wpas_iface)
+        check_sae_capab(wpas)
 
         passphrase = 'qwertyuiop'
         ssid = "AP MLD RSN override"
@@ -176,12 +177,12 @@ def run_rsn_override_mld(dev, apdev, mixed, only_sta=False,
             params1['rsn_override_pairwise_2'] = 'CCMP GCMP-256'
             params1['rsn_override_mfp_2'] = '2'
 
-        hapd0 = eht_mld_enable_ap(hapd_iface, params)
+        hapd0 = eht_mld_enable_ap(hapd_iface, 0, params)
 
         params1['channel'] = '6'
         if too_long_elems:
             params1['rsnoe_override'] = 'ddff506f9a29' + 251*'cc'
-        hapd1 = eht_mld_enable_ap(hapd_iface, params1)
+        hapd1 = eht_mld_enable_ap(hapd_iface, 1, params1)
 
         wpas.set("sae_pwe", "1")
         wpas.set("rsn_overriding", "1")
@@ -196,7 +197,7 @@ def run_rsn_override_mld(dev, apdev, mixed, only_sta=False,
             if ev is None:
                 raise Exception("EAPOL-Key M1 not reported")
             ev = wpas.wait_event(['EAPOL-RX', 'CTRL-EVENT-DISCONNECTED'],
-                                 timeout=10)
+                                 timeout=20)
             if ev is None:
                 raise Exception("Disconnection not reported")
             # The AP is expected to fail to send M3 due to RSNOE/RSNO2E/RSNXOE
@@ -435,3 +436,32 @@ def test_rsn_override_compatibility_mode(dev, apdev):
     finally:
         dev[0].set("sae_pwe", "0")
         dev[0].set("rsn_overriding", "0")
+
+def test_rsn_override_kdk_secure_ltf(dev, apdev):
+    """RSN overriding with KDK derivation due to Secure LTF support"""
+
+    ssid = "test-rsn-override"
+    params = hostapd.wpa2_params(ssid=ssid,
+                                 passphrase="12345678",
+                                 ieee80211w='1')
+    params['rsn_override_key_mgmt'] = 'SAE SAE-EXT-KEY'
+    params['rsn_override_pairwise'] = 'CCMP GCMP-256'
+    params['rsn_override_mfp'] = '2'
+    params['rsn_override_omit_rsnxe'] = '1'
+    params['beacon_prot'] = '1'
+    params['sae_groups'] = '19 20'
+    params['sae_require_mfp'] = '1'
+    params['sae_pwe'] = '2'
+    params['driver_params'] = "secure_ltf=1"
+    hapd = hostapd.add_ap(apdev[0], params)
+    bssid = hapd.own_addr()
+
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5", drv_params="secure_ltf=1")
+    check_sae_capab(wpas)
+
+    wpas.set("rsn_overriding", "1")
+    wpas.set("sae_pwe", "2")
+    wpas.set("sae_groups", "")
+    wpas.connect(ssid, sae_password="12345678", key_mgmt="SAE",
+                 ieee80211w="2", scan_freq="2412")

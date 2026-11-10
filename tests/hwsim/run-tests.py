@@ -11,6 +11,7 @@ import re
 import gc
 import sys
 import time
+import glob
 from datetime import datetime
 import argparse
 import subprocess
@@ -49,22 +50,22 @@ def reset_devs(dev, apdev):
         try:
             d.reset()
         except Exception as e:
-            logger.info("Failed to reset device " + d.ifname)
-            print(str(e))
+            logger.exception("Failed to reset device " + d.ifname)
             ok = False
 
-    wpas = None
-    try:
-        wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5', monitor=False)
-        ifaces = wpas.global_request("INTERFACES").splitlines()
-        for iface in ifaces:
-            if iface.startswith("wlan"):
-                wpas.interface_remove(iface)
-    except Exception as e:
-        pass
-    if wpas:
-        wpas.close_ctrl()
-        del wpas
+    for ifname in ['/tmp/wpas-wlan5', '/tmp/wpas-wlan6', '/tmp/wpas-wlan7']:
+        wpas = None
+        try:
+            wpas = WpaSupplicant(global_iface=ifname, monitor=False)
+            ifaces = wpas.global_request("INTERFACES").splitlines()
+            for iface in ifaces:
+                if iface.startswith("wlan"):
+                    wpas.interface_remove(iface)
+        except Exception as e:
+            pass
+        if wpas:
+            wpas.close_ctrl()
+            del wpas
 
     try:
         hapd = HostapdGlobal()
@@ -75,8 +76,7 @@ def reset_devs(dev, apdev):
                 hapd.remove(iface)
         hapd.remove('as-erp')
     except Exception as e:
-        logger.info("Failed to remove hostapd interface")
-        print(str(e))
+        logger.exception("Failed to remove hostapd interface")
         ok = False
     return ok
 
@@ -94,8 +94,8 @@ def add_log_file(conn, test, run, type, path):
         conn.execute(sql, params)
         conn.commit()
     except Exception as e:
-        print("sqlite: " + str(e))
-        print("sql: %r" % (params, ))
+        logger.exception("sqlite:")
+        logger.error("sql: %r" % (params, ))
 
 def report(conn, prefill, build, commit, run, test, result, duration, logdir,
            sql_commit=True):
@@ -113,8 +113,8 @@ def report(conn, prefill, build, commit, run, test, result, duration, logdir,
             if sql_commit:
                 conn.commit()
         except Exception as e:
-            print("sqlite: " + str(e))
-            print("sql: %r" % (params, ))
+            logger.exception("sqlite:")
+            logger.error("sql: %r" % (params, ))
 
         if result == "FAIL":
             for log in ["log", "log0", "log1", "log2", "log3", "log5",
@@ -160,6 +160,36 @@ class DataCollector(object):
             self._trace_cmd.stdin.write(b'DONE\n')
             self._trace_cmd.stdin.flush()
             self._trace_cmd.wait()
+
+        pcap = os.path.join(self._logdir, f'{self._testname}.hwsim0.pcapng')
+        if os.path.exists(pcap):
+            found_key = False
+            pmks_name = os.path.join(self._logdir, f'{self._testname}.pmks')
+            ptks_name = os.path.join(self._logdir, f'{self._testname}.ptks')
+            with open(pmks_name, 'wb') as pmks, \
+                 open(ptks_name, 'wb') as ptks:
+                logs = os.path.join(self._logdir, f'{self._testname}.*')
+                for f in glob.glob(logs):
+                    if f.endswith('.pcapng'): continue
+                    with open(f, 'rb') as logfile:
+                        for line in logfile:
+                            if b'PTK - hexdump' in line:
+                                ptks.write(line.split(b':')[-1].replace(b' ', b''))
+                                found_key = True
+                            if b'PMK - hexdump' in line:
+                                pmks.write(line.split(b':')[-1].replace(b' ', b''))
+                                found_key = True
+
+            if found_key:
+                out_pcap = os.path.join(self._logdir, f'{self._testname}.hwsim0.dec.pcapng')
+                if os.path.isfile('../../wlantest/wlantest'):
+                    wlantest_bin = '../../wlantest/wlantest'
+                else:
+                    wlantest_bin = 'wlantest'
+                with open(os.path.join(self._logdir, f'{self._testname}.dec.log'), 'w') as dec_log:
+                    subprocess.run([wlantest_bin, '-r', pcap, '-f', pmks_name,
+                                    '-T', ptks_name, '-n', out_pcap],
+                                   stdout=dec_log)
 
         if self._kmemleak:
             output = os.path.join(self._logdir, '%s.kmemleak' % (self._testname, ))
@@ -213,8 +243,7 @@ def rename_log(logdir, basename, testname, dev):
             dev.relog()
             subprocess.call(['chown', '-f', getpass.getuser(), srcname])
     except Exception as e:
-        logger.info("Failed to rename log files")
-        logger.info(e)
+        logger.exception("Failed to rename log files")
 
 def is_long_duration_test(t):
     return hasattr(t, "long_duration_test") and t.long_duration_test
@@ -377,8 +406,8 @@ def main():
                 try:
                     conn.execute(sql, params)
                 except Exception as e:
-                    print("sqlite: " + str(e))
-                    print("sql: %r" % (params,))
+                    logger.exception("sqlite:")
+                    logger.error("sql: %r" % (params,))
         if conn:
             conn.commit()
             conn.close()
@@ -568,8 +597,7 @@ def main():
                         raise Exception("Global PING failed for {}".format(d.ifname))
                     d.request("NOTE TEST-START " + name)
                 except Exception as e:
-                    logger.info("Failed to issue TEST-START before " + name + " for " + d.ifname)
-                    logger.info(e)
+                    logger.exception("Failed to issue TEST-START before " + name + " for " + d.ifname)
                     print("FAIL " + name + " - could not start test")
                     if conn:
                         conn.close()
@@ -577,6 +605,22 @@ def main():
                     if args.stdin_ctrl:
                         set_term_echo(sys.stdin.fileno(), True)
                     sys.exit(1)
+            for ifname in ['/tmp/wpas-wlan5']:
+                wpas = None
+                try:
+                    wpas = WpaSupplicant(global_iface=ifname, monitor=False)
+                    wpas.global_request("NOTE TEST-START " + name)
+                    del wpas
+                except:
+                    logger.exception("Failed to issue TEST-START before " + name + " for " + ifname)
+                    print("FAIL " + name + " - could not start test")
+            try:
+                hapd = HostapdGlobal()
+                hapd.request("NOTE TEST-START " + name)
+                del hapd
+            except Exception as e:
+                logger.exception("Failed to issue TEST-START before " + name + " for hostapd")
+                print("FAIL " + name + " - could not start test")
             skip_reason = None
             try:
                 if is_long_duration_test(t) and not args.long:
@@ -622,17 +666,8 @@ def main():
                 logger.info("Skip test case: %s" % e)
                 skip_reason = e
                 result = "SKIP"
-            except NameError as e:
-                import traceback
-                logger.info(e)
-                traceback.print_exc()
-                result = "FAIL"
             except Exception as e:
-                import traceback
-                logger.info(e)
-                traceback.print_exc()
-                if args.loglevel == logging.WARNING:
-                    print("Exception: " + str(e))
+                logger.exception(f"Exception during test execution: {str(e)}")
                 result = "FAIL"
 
             # Work around some objects having __del__, we really should
@@ -649,33 +684,33 @@ def main():
                     d.dump_monitor()
                     d.request("NOTE TEST-STOP " + name)
                 except Exception as e:
-                    logger.info("Failed to issue TEST-STOP after {} for {}".format(name, d.ifname))
-                    logger.info(e)
+                    logger.exception("Failed to issue TEST-STOP after {} for {}".format(name, d.ifname))
                     result = "FAIL"
             if args.no_reset:
                 print("Leaving devices in current state")
             else:
                 reset_ok = reset_devs(dev, apdev)
-            wpas = None
-            try:
-                wpas = WpaSupplicant(global_iface="/tmp/wpas-wlan5",
-                                     monitor=False)
-                rename_log(args.logdir, 'log5', name, wpas)
-                if not args.no_reset:
-                    wpas.remove_ifname()
-            except Exception as e:
-                pass
-            if wpas:
-                wpas.close_ctrl()
-                del wpas
+
+            for i in [5, 6, 7]:
+                wpas = None
+                try:
+                    wpas = WpaSupplicant(global_iface="/tmp/wpas-wlan%d" % i,
+                                         monitor=False)
+                    rename_log(args.logdir, 'log%d' % i, name, wpas)
+                    if not args.no_reset:
+                        wpas.remove_ifname()
+                except Exception as e:
+                    pass
+                if wpas:
+                    wpas.close_ctrl()
+                    del wpas
 
             for i in range(0, 3):
                 rename_log(args.logdir, 'log' + str(i), name, dev[i])
             try:
                 hapd = HostapdGlobal()
             except Exception as e:
-                print("Failed to connect to hostapd interface")
-                print(str(e))
+                logger.exception("Failed to connect to hostapd interface")
                 reset_ok = False
                 result = "FAIL"
                 hapd = None

@@ -229,7 +229,7 @@ int zephyr_hostapd_ctrl_zephyr_cmd(struct wpa_ctrl *ctrl, int argc, const char *
 int zephyr_hostapd_cli_cmd_v(struct wpa_ctrl *ctrl, const char *fmt, ...)
 {
 	va_list cmd_args;
-	int argc;
+	size_t argc;
 	const char *argv[MAX_ARGS];
 	char cmd[MAX_CMD_SIZE];
 
@@ -239,9 +239,9 @@ int zephyr_hostapd_cli_cmd_v(struct wpa_ctrl *ctrl, const char *fmt, ...)
 
 	(void)hostapd_make_argv(&argc, &argv[0], cmd, MAX_ARGS);
 
-	wpa_printf(MSG_DEBUG, "Calling hostapd_cli: %s, argc: %d", cmd, argc);
-	for (int i = 0; i < argc; i++)
-		wpa_printf(MSG_DEBUG, "argv[%d]: %s", i, argv[i]);
+	wpa_printf(MSG_DEBUG, "Calling hostapd_cli: %s, argc: %zu", cmd, argc);
+	for (size_t i = 0; i < argc; i++)
+		wpa_printf(MSG_DEBUG, "argv[%zu]: %s", i, argv[i]);
 
 	return zephyr_hostapd_ctrl_zephyr_cmd(ctrl, argc, argv);
 }
@@ -268,16 +268,9 @@ static int hostapd_cli_open_connection(struct hostapd_data *hapd)
 
 static void hostapd_cli_close_connection(struct hostapd_data *hapd)
 {
-	int ret;
-
 	if (!hapd || !hapd->iface || hapd->iface->ctrl_conn == NULL)
 		return;
 
-	ret = wpa_ctrl_detach(hapd->iface->ctrl_conn);
-	if (ret < 0) {
-		wpa_printf(MSG_INFO, "Failed to detach from wpa_supplicant: %s",
-			   strerror(errno));
-	}
 	wpa_ctrl_close(hapd->iface->ctrl_conn);
 	hapd->iface->ctrl_conn = NULL;
 }
@@ -336,7 +329,61 @@ fail:
 	return ret;
 }
 
-void zephyr_hostapd_ctrl_deinit(void *hapd)
+/*
+ * hapd_ctrl_close_fds - eloop callback to close ctrl sockets in eloop thread
+ *
+ * eloop_ctx: recv_sock fd encoded as (void *)(intptr_t)
+ * user_ctx:  send_sock fd encoded as (void *)(intptr_t)
+ *
+ * Encoding fds as pointer-sized integers avoids any heap allocation, so this
+ * callback can always be scheduled via eloop_register_timeout regardless of
+ * memory pressure.
+ */
+static void hapd_ctrl_close_fds(void *eloop_ctx, void *user_ctx)
 {
-	hostapd_cli_close_connection((struct hostapd_data *)hapd);
+	int recv_sock = (int)(intptr_t)eloop_ctx;
+	int send_sock = (int)(intptr_t)user_ctx;
+
+	/* Now in eloop thread, safe to unregister and close */
+	if (recv_sock >= 0) {
+		eloop_unregister_read_sock(recv_sock);
+		close(recv_sock);
+	}
+	if (send_sock >= 0)
+		close(send_sock);
+}
+
+void zephyr_hostapd_ctrl_deinit(void *hapd_ctx)
+{
+	struct hostapd_data *hapd = (struct hostapd_data *)hapd_ctx;
+	int recv_sock, send_sock;
+
+	if (!hapd)
+		return;
+
+	/* Close ctrl_conn (frees wpa_ctrl struct only, no fd close) */
+	hostapd_cli_close_connection(hapd);
+
+	recv_sock = hapd->recv_sock;
+	send_sock = hapd->send_sock;
+	hapd->recv_sock = -1;
+	hapd->send_sock = -1;
+
+	/*
+	 * Defer fd close to the eloop thread to avoid racing with
+	 * eloop_unregister_read_sock(). Fds are passed as pointer-sized
+	 * integers so no heap allocation is needed here.
+	 * timeout=0: fires in the next eloop iteration.
+	 */
+	if (eloop_register_timeout(0, 0, hapd_ctrl_close_fds,
+				   (void *)(intptr_t)recv_sock,
+				   (void *)(intptr_t)send_sock) < 0) {
+		/* eloop is shutting down; close inline as last resort */
+		if (recv_sock >= 0) {
+			eloop_unregister_read_sock(recv_sock);
+			close(recv_sock);
+		}
+		if (send_sock >= 0)
+			close(send_sock);
+	}
 }

@@ -64,9 +64,9 @@ def check_nr_results(dev, bssids=None, lci=False, civic=False):
 def test_rrm_neighbor_db(dev, apdev):
     """hostapd ctrl_iface SET_NEIGHBOR"""
     params = {"ssid": "test", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     params = {"ssid": "test2", "rrm_neighbor_report": "1"}
-    hapd2 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd2 = hostapd.add_ap(apdev[1], params)
 
     res = hapd.request("SHOW_NEIGHBOR")
     if len(res.splitlines()) != 1:
@@ -215,7 +215,7 @@ def test_rrm_neighbor_db(dev, apdev):
 def test_rrm_neighbor_db_failures(dev, apdev):
     """hostapd ctrl_iface SET_NEIGHBOR failures"""
     params = {"ssid": "test", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     cmd = "SET_NEIGHBOR 00:11:22:33:44:55 ssid=\"test1\" nr=" + nr + " lci=" + lci + " civic=" + civic
     tests = [(1, "hostapd_neighbor_add"),
              (1, "wpabuf_dup;hostapd_neighbor_set"),
@@ -229,7 +229,7 @@ def test_rrm_neighbor_db_failures(dev, apdev):
 def test_rrm_neighbor_db_disabled(dev, apdev):
     """hostapd ctrl_iface SHOW_NEIGHBOR while neighbor report disabled"""
     params = {"ssid": "test"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     if "FAIL" not in hapd.request("SHOW_NEIGHBOR"):
         raise Exception("SHOW_NEIGHBOR accepted")
 
@@ -242,9 +242,10 @@ def test_rrm_neighbor_rep_req(dev, apdev):
     nr3 = "dd112233445500000000510107"
 
     params = {"ssid": "test", "rnr": "1"}
-    hostapd.add_ap(apdev[0]['ifname'], params)
-    params = {"ssid": "test2", "rrm_neighbor_report": "1", "rnr": "1"}
-    hapd = hostapd.add_ap(apdev[1]['ifname'], params)
+    hostapd.add_ap(apdev[0], params)
+    params = {"ssid": "test2", "rrm_neighbor_report": "1", "rnr": "1",
+              "ftm_responder": "1", "lci": lci, "civic": civic}
+    hapd = hostapd.add_ap(apdev[1], params)
 
     bssid1 = apdev[1]['bssid']
 
@@ -351,7 +352,7 @@ def test_rrm_neighbor_rep_oom(dev, apdev):
     nr3 = "dd112233445500000000510107"
 
     params = {"ssid": "test", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].connect("test", key_mgmt="NONE", scan_freq="2412")
 
@@ -367,7 +368,7 @@ def test_rrm_lci_req(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     # station not specified
     if "FAIL" not in hapd.request("REQ_LCI "):
@@ -400,7 +401,7 @@ def test_rrm_lci_req_timeout(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].request("SET LCI " + lci)
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -431,7 +432,7 @@ def test_rrm_lci_req_oom(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].request("SET LCI " + lci)
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -454,7 +455,7 @@ def test_rrm_lci_req_ap_oom(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].request("SET LCI " + lci)
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -472,7 +473,7 @@ def test_rrm_lci_req_get_reltime_failure(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].request("SET LCI " + lci)
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -488,7 +489,7 @@ def test_rrm_neighbor_rep_req_from_conf(dev, apdev):
 
     params = {"ssid": "test2", "rrm_neighbor_report": "1",
               "stationary_ap": "1", "lci": lci, "civic": civic}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     bssid = apdev[0]['bssid']
 
@@ -504,7 +505,7 @@ def test_rrm_neighbor_rep_req_timeout(dev, apdev):
 
     params = {"ssid": "test2", "rrm_neighbor_report": "1",
               "stationary_ap": "1", "lci": lci, "civic": civic}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].connect("test2", key_mgmt="NONE", scan_freq="2412")
 
@@ -523,7 +524,7 @@ def test_rrm_neighbor_rep_req_oom(dev, apdev):
 
     params = {"ssid": "test2", "rrm_neighbor_report": "1",
               "stationary_ap": "1", "lci": lci, "civic": civic}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].connect("test2", key_mgmt="NONE", scan_freq="2412")
 
@@ -548,7 +549,7 @@ def test_rrm_neighbor_rep_req_disconnect(dev, apdev):
 
     params = {"ssid": "test2", "rrm_neighbor_report": "1",
               "stationary_ap": "1", "lci": lci, "civic": civic}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     if "FAIL" not in dev[0].request("NEIGHBOR_REP_REQUEST"):
         raise Exception("Request accepted while disconnected")
@@ -570,7 +571,7 @@ def test_rrm_neighbor_rep_req_not_supported(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "test2", "rrm_beacon_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].connect("test2", key_mgmt="NONE", scan_freq="2412")
 
@@ -583,7 +584,7 @@ def test_rrm_neighbor_rep_req_busy(dev, apdev):
 
     params = {"ssid": "test2", "rrm_neighbor_report": "1",
               "stationary_ap": "1", "lci": lci, "civic": civic}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     dev[0].connect("test2", key_mgmt="NONE", scan_freq="2412")
 
@@ -608,7 +609,7 @@ def test_rrm_ftm_range_req(dev, apdev):
 
 def run_rrm_ftm_range_req(dev, apdev):
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     # station not specified
@@ -694,7 +695,7 @@ def test_rrm_ftm_range_req_timeout(dev, apdev):
 
 def run_rrm_ftm_range_req_timeout(dev, apdev):
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     # Override RM capabilities to include FTM range report
@@ -734,7 +735,7 @@ def test_rrm_ftm_range_req_failure(dev, apdev):
 
 def run_rrm_ftm_range_req_failure(dev, apdev):
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     # Override RM capabilities to include FTM range report
@@ -764,7 +765,7 @@ def _test_rrm_ftm_capa_indication(dev, apdev):
     params = {"ssid": "ftm",
               "ftm_responder": "1",
               "ftm_initiator": "1",}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
 
     if "OK" not in dev[0].request("SET ftm_initiator 1"):
         raise Exception("could not set ftm_initiator")
@@ -1564,7 +1565,7 @@ def test_rrm_beacon_req_active_many(dev, apdev):
 
     params = {"ssid": "rrm", "rrm_beacon_report": "1"}
     params['vendor_elements'] = "dd50" + 80*'aa'
-    hapd = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[1], params)
 
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
     addr = dev[0].own_addr()
@@ -2058,7 +2059,7 @@ def test_rrm_beacon_req_ap_errors(dev, apdev):
 
 def run_rrm_beacon_req_ap_errors(dev, apdev):
     params = {"ssid": "rrm", "rrm_beacon_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
     dev[0].scan_for_bss(bssid, freq=2412)
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -2106,7 +2107,7 @@ def run_rrm_beacon_req_ap_errors(dev, apdev):
 def test_rrm_req_reject_oom(dev, apdev):
     """Radio measurement request - OOM while rejecting a request"""
     params = {"ssid": "rrm", "rrm_beacon_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -2129,7 +2130,7 @@ def test_rrm_req_reject_oom(dev, apdev):
 def test_rrm_req_when_rrm_not_used(dev, apdev):
     """Radio/link measurement request for non-RRM association"""
     params = {"ssid": "rrm"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -2268,7 +2269,7 @@ def test_rrm_link_measurement(dev, apdev):
     """Radio measurement request - link measurement"""
     check_tx_power_support(dev[0])
     params = {"ssid": "rrm", "rrm_beacon_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -2289,7 +2290,7 @@ def test_rrm_link_measurement_oom(dev, apdev):
     """Radio measurement request - link measurement OOM"""
     check_tx_power_support(dev[0])
     params = {"ssid": "rrm", "rrm_beacon_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -2319,7 +2320,7 @@ def test_rrm_rep_parse_proto(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     dev[0].request("SET LCI " + lci)
@@ -2354,7 +2355,7 @@ def test_rrm_unexpected(dev, apdev):
     check_rrm_support(dev[0])
 
     params = {"ssid": "rrm", "rrm_neighbor_report": "0"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     dev[0].connect("rrm", key_mgmt="NONE", scan_freq="2412")
@@ -2381,7 +2382,7 @@ def check_beacon_req(hapd, addr, idx):
 def test_rrm_reassociation(dev, apdev):
     """Radio measurement request - reassociation"""
     params = {"ssid": "rrm", "rrm_beacon_report": "1"}
-    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd = hostapd.add_ap(apdev[0], params)
     bssid = hapd.own_addr()
 
     addr = dev[0].own_addr()
@@ -2395,7 +2396,7 @@ def test_rrm_reassociation(dev, apdev):
     hapd.wait_sta()
     check_beacon_req(hapd, addr, 1)
 
-    hapd2 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd2 = hostapd.add_ap(apdev[1], params)
     bssid2 = hapd2.own_addr()
     dev[0].scan_for_bss(bssid2, freq=2412, force_scan=True)
     dev[0].roam(bssid2)

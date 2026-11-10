@@ -18,6 +18,7 @@ HWSIM_ATTR_RADIO_ID = 10
 HWSIM_ATTR_SUPPORT_P2P_DEVICE = 14
 HWSIM_ATTR_USE_CHANCTX = 15
 HWSIM_ATTR_MLO_SUPPORT = 25
+HWSIM_ATTR_NAN_SUPPORT = 30
 
 # the controller class
 class HWSimController(object):
@@ -26,7 +27,8 @@ class HWSimController(object):
         self._fid = netlink.genl_controller.get_family_id(b'MAC80211_HWSIM')
 
     def create_radio(self, n_channels=None, use_chanctx=False,
-                     use_p2p_device=False, use_mlo=False):
+                     use_p2p_device=False, use_mlo=False,
+                     use_nan=False):
         attrs = []
         if n_channels:
             attrs.append(netlink.U32Attr(HWSIM_ATTR_CHANNELS, n_channels))
@@ -36,6 +38,9 @@ class HWSimController(object):
             attrs.append(netlink.FlagAttr(HWSIM_ATTR_SUPPORT_P2P_DEVICE))
         if use_mlo:
             attrs.append(netlink.FlagAttr(HWSIM_ATTR_MLO_SUPPORT))
+
+        if use_nan:
+            attrs.append(netlink.FlagAttr(HWSIM_ATTR_NAN_SUPPORT))
 
         msg = netlink.GenlMessage(self._fid, HWSIM_CMD_CREATE_RADIO,
                                   flags=netlink.NLM_F_REQUEST |
@@ -53,19 +58,22 @@ class HWSimController(object):
 
 class HWSimRadio(object):
     def __init__(self, n_channels=None, use_chanctx=False,
-                 use_p2p_device=False, use_mlo=False):
+                 use_p2p_device=False, use_mlo=False,
+                 use_nan=False):
         self._controller = HWSimController()
         self._n_channels = n_channels
         self._use_chanctx = use_chanctx
         self._use_p2p_dev = use_p2p_device
         self._use_mlo = use_mlo
+        self._use_nan = use_nan
 
     def __enter__(self):
         self._radio_id = self._controller.create_radio(
               n_channels=self._n_channels,
               use_chanctx=self._use_chanctx,
               use_p2p_device=self._use_p2p_dev,
-              use_mlo=self._use_mlo)
+              use_mlo=self._use_mlo,
+              use_nan=self._use_nan)
         if self._radio_id < 0:
             raise Exception("Failed to create radio (err:%d)" % self._radio_id)
         try:

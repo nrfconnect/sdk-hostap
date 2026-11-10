@@ -473,7 +473,7 @@ def test_scan_for_auth_wep(dev, apdev):
 def test_scan_hidden(dev, apdev):
     """Control interface behavior on scan parameters"""
     dev[0].flush_scan_cache()
-    ssid = "test-scan"
+    ssid = "test-hidden-scan"
     wrong_ssid = "wrong"
     hapd = hostapd.add_ap(apdev[0], {"ssid": ssid,
                                      "ignore_broadcast_ssid": "1"})
@@ -496,17 +496,17 @@ def test_scan_hidden(dev, apdev):
         check_scan(dev[0], "freq=2412 use_id=1")
     finally:
         dev[0].request("VENDOR_ELEM_REMOVE 14 *")
-    if "test-scan" in dev[0].request("SCAN_RESULTS"):
+    if ssid in dev[0].request("SCAN_RESULTS"):
         raise Exception("BSS unexpectedly found in initial scan")
 
     id1 = dev[0].connect("foo", key_mgmt="NONE", scan_ssid="1",
                          only_add_network=True)
-    id2 = dev[0].connect("test-scan", key_mgmt="NONE", scan_ssid="1",
+    id2 = dev[0].connect(ssid, key_mgmt="NONE", scan_ssid="1",
                          only_add_network=True)
     id3 = dev[0].connect("bar", key_mgmt="NONE", only_add_network=True)
 
     check_scan(dev[0], "freq=2412 use_id=1")
-    if "test-scan" in dev[0].request("SCAN_RESULTS"):
+    if ssid in dev[0].request("SCAN_RESULTS"):
         raise Exception("BSS unexpectedly found in scan")
 
     # Allow multiple attempts to be more robust under heavy CPU load that can
@@ -515,7 +515,7 @@ def test_scan_hidden(dev, apdev):
     found = False
     for i in range(10):
         check_scan(dev[0], "scan_id=%d,%d,%d freq=2412 use_id=1" % (id1, id2, id3))
-        if "test-scan" in dev[0].request("SCAN_RESULTS"):
+        if ssid in dev[0].request("SCAN_RESULTS"):
             found = True
             break
     if not found:
@@ -1083,6 +1083,55 @@ def test_scan_abort_on_connect(dev, apdev):
         raise Exception("Scan did not start")
     dev[0].connect("test-scan", key_mgmt="NONE")
 
+def test_scan_aborted_on_connect_no_reselect(dev, apdev):
+    """Aborted scan must not drive network selection during a connection"""
+    # When a scan is aborted (e.g., on a disconnection request issued while
+    # connecting to a network that is not present), the aborted - and thus
+    # incomplete - scan results must not be fed into network selection. If
+    # they are, "no suitable network" handling schedules yet another scan,
+    # which can again be aborted, and the supplicant ends up continuously
+    # processing aborted scan results. Verify that an aborted scan does not
+    # trigger such a follow-up scanning loop.
+    dev[0].flush_scan_cache()
+    try:
+        dev[0].dump_monitor()
+
+        dev[0].connect("nonexistent-network", psk="12345678", scan_ssid="1",
+                       scan_freq="2412", wait_connect=False)
+
+        ev = dev[0].wait_event(["CTRL-EVENT-SCAN-STARTED"], timeout=5)
+        if ev is None:
+            raise Exception("Scan did not start")
+
+        # Abort the ongoing scan. This is delivered as an aborted scan-results
+        # event while still trying to connect (disconnected flag not set), so
+        # it exercises the network-selection path for an aborted scan.
+        if "OK" not in dev[0].request("ABORT_SCAN"):
+            raise Exception("ABORT_SCAN failed")
+        ev = dev[0].wait_event(["CTRL-EVENT-SCAN-RESULTS"], timeout=2)
+        if ev is None:
+            raise Exception("Aborted scan did not terminate")
+        dev[0].dump_monitor()
+
+        # Without the fix, the aborted (incomplete) scan results are fed into
+        # network selection ("no suitable network found"), which schedules a
+        # follow-up scan (after scan_interval). With the fix, the aborted scan
+        # is short-circuited and no such follow-up scan is triggered. Observe
+        # for longer than scan_interval to catch the rescheduled scan.
+        ev = dev[0].wait_event(["CTRL-EVENT-SCAN-STARTED"], timeout=8)
+        scanned = ev is not None
+        logger.info("Follow-up scan after aborted scan: %s" % scanned)
+
+        # The control interface must remain responsive (a busy-loop would
+        # starve it and make PING time out).
+        if "PONG" not in dev[0].request("PING"):
+            raise Exception("Control interface not responsive after abort")
+
+        if scanned:
+            raise Exception("Aborted scan drove network selection and triggered a follow-up scan")
+    finally:
+        dev[0].request("REMOVE_NETWORK all")
+
 @remote_compatible
 def test_scan_ext(dev, apdev):
     """Custom IE in Probe Request frame"""
@@ -1290,6 +1339,11 @@ def test_scan_chan_switch(dev, apdev):
     dev[0].dump_monitor()
     run_scan(dev[0], bssid, 2412)
     dev[0].dump_monitor()
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+    hapd.disable()
+    dev[0].flush_scan_cache()
 
 def test_scan_new_only(dev, apdev):
     """Scan and only_new=1 multiple times"""
@@ -1534,7 +1588,17 @@ def test_scan_specific_bssid(dev, apdev):
 
 def test_scan_probe_req_events(dev, apdev):
     """Probe Request frame RX events from hostapd"""
-    hapd = hostapd.add_ap(apdev[0], {"ssid": "open"})
+    run_scan_probe_req_events(dev, apdev)
+
+def test_scan_probe_req_events_with_payload(dev, apdev):
+    """Probe Request frame RX events with payload from hostapd"""
+    run_scan_probe_req_events(dev, apdev, with_payload=True)
+
+def run_scan_probe_req_events(dev, apdev, with_payload=False):
+    params = {"ssid": "open"}
+    if with_payload:
+        params["notify_mgmt_frames"] = "1"
+    hapd = hostapd.add_ap(apdev[0], params)
     hapd2 = hostapd.Hostapd(apdev[0]['ifname'])
     if "OK" not in hapd2.mon.request("ATTACH probe_rx_events=1"):
         raise Exception("Failed to register for events")
@@ -1546,6 +1610,8 @@ def test_scan_probe_req_events(dev, apdev):
         raise Exception("RX-PROBE-REQUEST not reported")
     if "sa=" + dev[0].own_addr() not in ev:
         raise Exception("Unexpected event parameters: " + ev)
+    if with_payload and " buf=40" not in ev:
+        raise Exception("Missing payload in event parameters: " + ev)
 
     ev = hapd.wait_event(["RX-PROBE-REQUEST"], timeout=0.1)
     if ev is not None:
@@ -2027,3 +2093,21 @@ def test_scan_short_ssid_list(dev, apdev):
 
     if not found:
         raise Exception("AP not found in scan results")
+
+def test_scan_freq_network(dev, apdev):
+    """Scanning channels based on network profiles"""
+    hostapd.add_ap(apdev[0], {"ssid": "test-scan"})
+
+    id = dev[0].add_network()
+    dev[0].set_network_quoted(id, "ssid", "foo")
+    dev[0].set_network(id, "key_mgmt", "NONE")
+    dev[0].set_network(id, "disabled", "0")
+
+    id2 = dev[0].add_network()
+    dev[0].set_network_quoted(id2, "ssid", "test-scan")
+    dev[0].set_network(id2, "key_mgmt", "NONE")
+    dev[0].set_network(id2, "disabled", "0")
+    dev[0].set_network(id2, "scan_freq", "2412")
+
+    dev[0].select_network(id2)
+    dev[0].wait_connected()

@@ -383,6 +383,10 @@ def run_autogo_chan_switch(dev):
     time.sleep(0.1)
     hwsim_utils.test_connectivity_p2p(dev[0], dev[1])
 
+    # Wait a bit longer as the kernel might disconnect on a malformed beacon
+    time.sleep(0.5)
+    hwsim_utils.test_connectivity_p2p(dev[0], dev[1])
+
     dev[0].remove_group()
     dev[1].wait_go_ending_session()
 
@@ -814,7 +818,6 @@ def rx_pd_req(dev):
 def test_autogo_scan(dev):
     """P2P autonomous GO and no P2P IE in Probe Response scan results"""
     addr0 = dev[0].p2p_dev_addr()
-    addr1 = dev[1].p2p_dev_addr()
     dev[0].p2p_start_go(freq=2412, persistent=True)
     bssid = dev[0].p2p_interface_addr()
 
@@ -824,9 +827,6 @@ def test_autogo_scan(dev):
     time.sleep(0.1)
     dev[1].flush_scan_cache()
 
-    pin = dev[1].wps_read_pin()
-    dev[0].group_request("WPS_PIN any " + pin)
-
     try:
         dev[1].request("SET p2p_disabled 1")
         dev[1].request("SCAN freq=2412")
@@ -835,6 +835,17 @@ def test_autogo_scan(dev):
             raise Exception("Active scan did not complete")
     finally:
         dev[1].request("SET p2p_disabled 0")
+
+    # When dev[1] has a dedicated P2P Device interface, then p2p_disabled
+    # will remove it. So get the address now and repeat some of the setup.
+    addr1 = dev[1].p2p_dev_addr()
+    pin = dev[1].wps_read_pin()
+    dev[0].group_request("WPS_PIN any " + pin)
+    dev[1].discover_peer(addr0)
+    dev[1].p2p_stop_find()
+    ev = dev[1].wait_global_event(["P2P-FIND-STOPPED"], timeout=2)
+    time.sleep(0.1)
+    dev[1].flush_scan_cache()
 
     for i in range(2):
         dev[1].request("SCAN freq=2412 passive=1")
@@ -942,6 +953,7 @@ def run_autogo_interworking(dev):
     dev[0].global_request("SET go_venue_type 3")
     res = autogo(dev[0])
     bssid = dev[0].p2p_interface_addr()
+    dev[1].flush_scan_cache()
     dev[1].scan_for_bss(bssid, freq=res['freq'])
     bss = dev[1].get_bss(bssid)
     dev[0].remove_group()
