@@ -653,7 +653,7 @@ fi.w1.wpa_supplicant1.CreateInterface.
       </li>
       <li>
 	<h3>SignalPoll ( ) --> a{sv} : properties</h3>
-	<p>Fetch signal properties for the current connection.</p>
+	<p>Fetch signal properties for the current connection. The dictionary of properties is stored within a variant container.</p>
 	<h4>Returns</h4>
 	<dl>
 	  <dt>a{sv} : properties</dt>
@@ -730,6 +730,175 @@ fi.w1.wpa_supplicant1.CreateInterface.
 	  <dd>No subscription in place.</dd>
 	  <dt>fi.w1.wpa_supplicant1.SubscriptionNotYou</dt>
 	  <dd>Subscription in place, but for another process.</dd>
+	</dl>
+      </li>
+
+      <li>
+	<h3>NANPublish ( a{sv} : args ) --> u : publish_id</h3>
+	<p>Publish a NAN USD service.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>a{sv} : args</dt>
+	  <dd>
+	    A dictionary with following parameters:
+	    <table>
+	    <tr><th>Key</th><th>Value type</th><th>Description</th><th>Required</th></tr>
+	    <tr><td>srv_name</td><td>s</td><td>Service name.</td><td>yes</td></tr>
+	    <tr><td>srv_proto_type</td><td>u</td><td>Service Protocol Type</td><td>yes</td></tr>
+	    <tr><td>solicited</td><td>b</td><td>Solicited Publish</td><td></td></tr>
+	    <tr><td>unsolicited</td><td>b</td><td>Unsolicited Publish</td><td></td></tr>
+	    <tr><td>solicited_multicast</td><td>b</td><td>Solicited transmission type multicast</td><td></td></tr>
+	    <tr><td>ttl</td><td>u</td><td>Time to live (in seconds); 0 = one TX only</td><td>yes</td></tr>
+	    <tr><td>disable_events</td><td>b</td><td>Event conditions</td><td></td></tr>
+	    <tr><td>fsd</td><td>b</td><td>Further Service Discovery flag</td><td></td></tr>
+	    <tr><td>fsd_gas</td><td>b</td><td>Further Service Discovery function GAS</td><td></td></tr>
+	    <tr><td>p2p</td><td>b</td><td>Allow P2P IE to be added into NAN SDFs</td><td></td></tr>
+	    <tr><td>freq</td><td>q</td><td>Default frequency in MHz</td><td>yes</td></tr>
+	    <tr><td>announcement_period</td><td>u</td><td>Announcement period in ms</td><td></td></tr>
+	    <tr><td>ssi</td><td>ay</td><td>Service specific information</td><td>yes</td></tr>
+	    <tr><td>freq_list</td><td>aq</td><td>frequency list</td><td></td></tr>
+	    </table>
+	  </dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.NoMemory</dt>
+	  <dd>Needed memory was not possible to get allocated.</dd>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANCancelPublish ( u : publish_id ) --> nothing</h3>
+	<p>Cancel a previously added NAN USD published service.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>u : publish_id</dt>
+	  <dd>Publish ID from NANPublish().</dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANUpdatePublish ( a{sv} : args ) --> nothing</h3>
+	<p>Update the SSI of a previous added NAN publish for the interface.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>a{sv} : args</dt>
+	  <dd>
+	    A dictionary with following parameters:
+	    <table>
+	    <tr><th>Key</th><th>Value type</th><th>Description</th><th>Required</th></tr>
+	    <tr><td>publish_id</td><td>i</td><td>Publish ID to be updated</td><td>yes</td></tr>
+	    <tr><td>ssi</td><td>ay</td><td>Service specific information</td><td></td></tr>
+	    </table>
+	  </dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	  <dt>fi.w1.wpa_supplicant1.NoMemory</dt>
+	  <dd>Needed memory was not possible to get allocated.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANPublishStopListen ( u : publish_id ) --> nothing</h3>
+	<p>Stop listen operation for a previously added NAN USD publisher service.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>u : publish_id</dt>
+	  <dd>Publish ID from NANPublish().</dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANSubscribe ( a{sv} : args ) --> u : subscribe_id</h3>
+	<p>Subscribe to a NAN USD service.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>a{sv} : args</dt>
+	  <dd>
+	    A dictionary with following parameters:
+	    <table>
+	    <tr><th>Key</th><th>Value type</th><th>Description</th><th>Required</th></tr>
+	    <tr><td>srv_name</td><td>s</td><td>Service name</td><td>yes</td></tr>
+	    <tr><td>srv_proto_type</td><td>u</td><td>Service Protocol Type</td><td>yes</td></tr>
+	    <tr><td>active</td><td>b</td><td>Subscribe type</td><td></td></tr>
+	    <tr><td>p2p</td><td>b</td><td>Allow P2P IE to be added into NAN SDFs</td><td></td></tr>
+	    <tr><td>ttl</td><td>u</td><td>Time to live (in seconds); 0 = one TX only</td><td></td></tr>
+	    <tr><td>freq</td><td>q</td><td>Default frequency in MHz</td><td>yes</td></tr>
+	    <tr><td>query_period</td><td>u</td><td>Query period in ms</td><td></td></tr>
+	    <tr><td>ssi</td><td>ay</td><td>Service specific information</td><td>yes</td></tr>
+	    <tr><td>freq_list</td><td>aq</td><td>frequency list</td><td></td></tr>
+	    </table>
+	  </dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANCancelSubscribe ( u : subscribe_id ) --> nothing</h3>
+	<p>Cancel a previously started NAN USD subscription.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>u : subscribe_id</dt>
+	  <dd>Subscription ID from NANSubscribe().</dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANSubscribeStopListen ( u : subscribe_id ) --> nothing</h3>
+	<p>Stop listen operation for a previously started NAN USD subscription.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>u : subscribe_id</dt>
+	  <dd>Subscription ID from NANSubscribe().</dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANTransmit ( a{sv} : args ) --> nothing</h3>
+	<p>Send a follow-up message for NAN USD service discovery.</p>
+	<h4>Arguments</h4>
+	<dl>
+	  <dt>a{sv} : args</dt>
+	  <dd>
+	    A dictionary with following parameters:
+	    <table>
+	    <tr><th>Key</th><th>Value type</th><th>Description</th><th>Required</th></tr>
+
+	    <tr><td>handle</td><td>u</td><td>id from NANPublish or NANSubscribe.</td><td>yes</td></tr>
+	    <tr><td>req_instance_id</td><td>u</td><td>peer's id</td><td>yes</td></tr>
+	    <tr><td>peer_addr</td><td>s</td><td>peer's MAC address</td><td>yes</td></tr>
+	    <tr><td>ssi</td><td>ay</td><td>Service specific information</td><td>yes</td></tr>
+	    </table>
+	  </dd>
+	</dl>
+	<h4>Possible errors</h4>
+	<dl>
+	  <dt>fi.w1.wpa_supplicant1.InvalidArgs</dt>
+	  <dd>Invalid entries were found in the passed argument.</dd>
+	  <dt>fi.w1.wpa_supplicant1.NoMemory</dt>
+	  <dd>Needed memory was not possible to get allocated.</dd>
 	</dl>
       </li>
     </ul>
@@ -881,6 +1050,11 @@ fi.w1.wpa_supplicant1.CreateInterface.
       <li>
 	<h3>RoamComplete - b - (read)</h3>
 	<p>The most recent roam success or failure.</p>
+      </li>
+
+      <li>
+	<h3>ScanInProgress6GHz - b - (read)</h3>
+	<p>Whether a 6GHz scan is currently in progress.</p>
       </li>
 
       <li>
@@ -1086,11 +1260,6 @@ fi.w1.wpa_supplicant1.CreateInterface.
       <li>
 	<h3>TdlsExternalControl - s - (read/write)</h3>
 	<p>External control for TDLS setup requests</p>
-      </li>
-
-      <li>
-	<h3>OsuDir - s - (read/write)</h3>
-	<p>OSU provider information directory</p>
       </li>
 
       <li>
@@ -1380,6 +1549,51 @@ fi.w1.wpa_supplicant1.CreateInterface.
 	  <dd>Determine if the request was successful. If so fields are available in BSS.</dd>
 	</dl>
       </li>
+
+      <li>
+	<h3>NANDiscoveryResult ( a{sv} : args )</h3>
+	<p>The DiscoveryResult event in the NAN Discovery Engine to indicate the result of an NANSubscribe.</p>
+	<dl>
+	  <dt>a{sv} : args</dt>
+	  <dd>A dictionary with pairs of field names and their values. Possible dictionary keys are: "subscribe_id", "publish_id", "peer_addr", "fsd", "fsd_gas", "srv_proto_type", "ssi"</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANReplied ( a{sv} : args )</h3>
+	<p>The Replied event in the NAN Discovery Engine.</p>
+	<dl>
+	  <dt>a{sv} : args</dt>
+	  <dd>A dictionary with pairs of field names and their values. Possible dictionary keys are: "publish_id", "subscribe_id", "peer_addr", "srv_proto_type", "ssi"</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANReceive ( a{sv} : args )</h3>
+	<p>The Receive event in the NAN Discovery Engine.</p>
+	<dl>
+	  <dt>a{sv} : nanrx</dt>
+	  <dd>A dictionary with pairs of field names and their values. Possible dictionary keys are: "id", "peer_id", "peer_addr", "ssi"</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANPublishTerminated ( u : publish_id, s : reason )</h3>
+	<p>The PublishTerminated event in the NAN Discovery Engine.</p>
+	<dl>
+	  <dt>u : publish_id</dt>
+	  <dd>The terminated publish_id</dd>
+	  <dt>s : reason</dt>
+	  <dd>The reason of termination</dd>
+	</dl>
+      </li>
+      <li>
+	<h3>NANSubscribeTerminated ( u : subscribe_id, s : reason )</h3>
+	<p>The SubscribeTerminated event in the NAN Discovery Engine.</p>
+	<dl>
+	  <dt>u : subscribe_id</dt>
+	  <dd>The terminated subscribe_id</dd>
+	  <dt>s : reason</dt>
+	  <dd>The reason of termination</dd>
+	</dl>
+      </li>
     </ul>
 
 
@@ -1620,6 +1834,7 @@ Interface for performing P2P (Wi-Fi Peer-to-Peer) P2P Device operations.
 	<tr><td>peer</td><td>o</td><td></td><td>yes</td></tr>
 	<tr><td>persistent</td><td>b</td><td>Whether to form a persistent group.</td><td>no</td></tr>
 	<tr><td>join</td><td>b</td><td>Whether to join an already operating group instead of forming a new group.</td><td>no</td></tr>
+	<tr><td>auto_join</td><td>b</td><td>Automatically choose between joining an already operating group or forming a new group.</td><td>no</td></tr>
 	<tr><td>authorize_only</td><td>b</td><td>Whether to authorize a peer to initiate GO Negotiation instead of initiating immediately.</td><td>no</td></tr>
 	<tr><td>frequency</td><td>i</td><td>Operating frequency in MHz</td><td>no</td></tr>
 	<tr><td>go_intent</td><td>i</td><td>GO intent 0-15</td><td>no</td></tr>
@@ -1882,6 +2097,10 @@ Interface for performing P2P (Wi-Fi Peer-to-Peer) P2P Device operations.
 
   <li>
     <h3>PersistentGroups - ao - (read)</h3>
+  </li>
+
+  <li>
+    <h3>DeviceAddress - ay - (read)</h3>
   </li>
 </ul>
 
@@ -2148,7 +2367,14 @@ Interface for performing P2P (Wi-Fi Peer-to-Peer) P2P Device operations.
       <dd>Reason for failure or empty string if not known.</dd>
     </dl>
   </li>
-</ul>
+
+  <li>
+    <h3>BootstrappingRequest ( o : path, q : bootstrap_method )</h3>
+  </li>
+
+  <li>
+    <h3>BootstrappingResponse ( o : path, i : status, q : bootstrap_method )</h3>
+  </li>
 
 \section dbus_bss fi.w1.wpa_supplicant1.BSS
 
@@ -2238,9 +2464,6 @@ scan results.
 	  <tr><td>HS20WanMetrics</td><td>ay</td></tr>
 	  <tr><td>HS20ConnectionCapability</td><td>ay</td></tr>
 	  <tr><td>HS20OperatingClass</td><td>ay</td></tr>
-	  <tr><td>HS20OSUProvidersList</td><td>ay</td></tr>
-	  <tr><td>HS20OperatorIconMetadata</td><td>ay</td></tr>
-	  <tr><td>HS20OSUProvidersNAIList</td><td>ay</td></tr>
 	</table>
 	<p>Unnamed ANQP elements have a generic entry name 'anqp[id]' where 'id' is the InfoID of the ANQP element as described in IEEE Std 802.11-2020, Table 9-331 (ANQP-element definitions).</p>
       </li>
@@ -2437,6 +2660,11 @@ Interface implemented by objects representing active P2P groups.
   <li>
     <h3>WPSVendorExtensions - aay - (read/write)</h3>
     <p>WPS vendor extension attributes used on the GO. This is valid only the in the GO role. An empty array is returned in P2P Client role. At maximum, 10 separate vendor extension byte arrays can be configured. The GO device will include the configured attributes in WPS exchanges.</p>
+  </li>
+
+  <li>
+    <h3>GODeviceAddress - ay - (read)</h3>
+    <p>Returns the device address of the GO of the group. This is available for both client and GO roles.</p>
   </li>
 </ul>
 

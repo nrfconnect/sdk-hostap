@@ -353,7 +353,8 @@ def _test_mesh_open_rssi_threshold(dev, apdev, value, expected):
 
     cmd = subprocess.Popen(["iw", "dev", dev[0].ifname, "get", "mesh_param",
                             "mesh_rssi_threshold"], stdout=subprocess.PIPE)
-    mesh_rssi_threshold = int(cmd.stdout.read().decode().split(" ")[0])
+    out, err = cmd.communicate()
+    mesh_rssi_threshold = int(out.decode().split(" ")[0])
 
     dev[0].mesh_group_remove()
     check_mesh_group_removed(dev[0])
@@ -476,6 +477,8 @@ def set_reg(dev, country):
 def clear_reg_setting(dev):
     dev[0].request("MESH_GROUP_REMOVE " + dev[0].ifname)
     dev[1].request("MESH_GROUP_REMOVE " + dev[1].ifname)
+    dev[0].set("country", "00")
+    dev[1].set("country", "00")
     clear_regdom_dev(dev)
     dev[0].flush_scan_cache()
     dev[1].flush_scan_cache()
@@ -489,13 +492,15 @@ def test_mesh_secure_ocv_mix_legacy(dev, apdev):
 
 def run_mesh_secure_ocv_mix_legacy(dev, apdev):
     check_mesh_support(dev[0], secure=True)
-    set_reg(dev, 'AZ')
+    dev[0].set("country", "AZ")
 
     dev[0].request("SET sae_groups ")
     id = add_mesh_secure_net(dev[0], pmf=True, ocv=True)
     dev[0].set_network(id, "frequency", "5200")
     dev[0].set_network(id, "max_oper_chwidth", "2")
     dev[0].mesh_group_add(id)
+    check_dfs_started(dev[0])
+    check_dfs_finished(dev[0])
 
     dev[1].request("SET sae_groups ")
     id = add_mesh_secure_net(dev[1], pmf=True, ocv=True)
@@ -515,13 +520,15 @@ def test_mesh_secure_ocv_mix_ht(dev, apdev):
 
 def run_mesh_secure_ocv_mix_ht(dev, apdev):
     check_mesh_support(dev[0], secure=True)
-    set_reg(dev, 'AZ')
+    dev[0].set("country", "AZ")
 
     dev[0].request("SET sae_groups ")
     id = add_mesh_secure_net(dev[0], pmf=True, ocv=True)
     dev[0].set_network(id, "frequency", "5200")
     dev[0].set_network(id, "max_oper_chwidth", "2")
     dev[0].mesh_group_add(id)
+    check_dfs_started(dev[0])
+    check_dfs_finished(dev[0])
 
     dev[1].request("SET sae_groups ")
     id = add_mesh_secure_net(dev[1], pmf=True, ocv=True)
@@ -1226,9 +1233,9 @@ def _test_mesh_open_vht_160(dev, apdev):
                 break
 
         cmd = subprocess.Popen(["iw", "reg", "get"], stdout=subprocess.PIPE)
-        reg = cmd.stdout.read()
+        out, err = cmd.communicate()
         found = False
-        for entry in reg.splitlines():
+        for entry in out.splitlines():
             entry = entry.decode()
             if "@ 160)" in entry and "DFS" not in entry:
                 found = True
@@ -1775,7 +1782,7 @@ def test_mesh_oom(dev, apdev):
         if ev is None:
             raise Exception("Init failure not reported")
 
-    with alloc_fail(dev[0], 2, "=wpa_supplicant_mesh_init"):
+    with alloc_fail(dev[0], 1, "int_array_dup;wpa_supplicant_mesh_init"):
         add_open_mesh_network(dev[0], basic_rates="60 120 240")
         ev = dev[0].wait_event(["Failed to init mesh"])
         if ev is None:
@@ -2613,3 +2620,35 @@ def test_wpas_mesh_sae_inject(dev, apdev):
         time.sleep(10)
     finally:
         stop_monitor(apdev[1]["ifname"])
+
+def test_wpas_mesh_secure_6ghz_320(dev, apdev):
+    """wpa_supplicant secure 6 GHz mesh network connectivity in 320 MHz"""
+    check_mesh_support(dev[0], secure=True)
+    check_mesh_support(dev[1], secure=True)
+
+    try:
+        # CA enables 320 MHz channels without NO-IR restriction
+        set_reg(dev, 'CA')
+
+        dev[0].set("sae_groups", "")
+        id = add_mesh_secure_net(dev[0])
+        dev[0].set_network(id, "frequency", "5975")
+        dev[0].set_network(id, "max_oper_chwidth", "9")
+        dev[0].mesh_group_add(id)
+
+        dev[1].set("sae_groups", "")
+        id = add_mesh_secure_net(dev[1])
+        dev[1].set_network(id, "frequency", "5975")
+        dev[1].set_network(id, "max_oper_chwidth", "9")
+        dev[1].mesh_group_add(id)
+
+        check_mesh_joined_connected(dev, connectivity=True)
+
+        state = dev[0].get_status_field("wpa_state")
+        if state != "COMPLETED":
+            raise Exception("Unexpected wpa_state on dev0: " + state)
+        state = dev[1].get_status_field("wpa_state")
+        if state != "COMPLETED":
+            raise Exception("Unexpected wpa_state on dev1: " + state)
+    finally:
+        clear_reg_setting(dev)

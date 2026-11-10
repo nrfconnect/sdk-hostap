@@ -21,6 +21,8 @@ int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 				       struct sockaddr_storage *from,
 				       socklen_t fromlen);
 #endif
+int hostapd_mld_ctrl_iface_init(struct hostapd_mld *mld);
+void hostapd_mld_ctrl_iface_deinit(struct hostapd_mld *mld);
 #else /* CONFIG_NO_CTRL_IFACE */
 static inline int hostapd_ctrl_iface_init(struct hostapd_data *hapd)
 {

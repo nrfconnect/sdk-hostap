@@ -60,7 +60,7 @@ void hostapd_event_wrapper(void *ctx, enum wpa_event_type event, union wpa_event
 				char *frame = os_zalloc(data->tx_status.data_len);
 
 				if (!frame) {
-					wpa_printf(MSG_ERROR, "%s:%d Failed to alloc %d bytes\n", __func__,
+					wpa_printf(MSG_ERROR, "%s:%d Failed to alloc %zu bytes\n", __func__,
 								__LINE__, data->tx_status.data_len);
 					os_free(msg.data);
 					return;
@@ -78,7 +78,7 @@ void hostapd_event_wrapper(void *ctx, enum wpa_event_type event, union wpa_event
 				char *frame = os_zalloc(data->rx_mgmt.frame_len);
 
 				if (!frame) {
-					wpa_printf(MSG_ERROR, "%s:%d Failed to alloc %d bytes\n",
+					wpa_printf(MSG_ERROR, "%s:%d Failed to alloc %zu bytes\n",
 						__func__, __LINE__, data->rx_mgmt.frame_len);
 					os_free(msg.data);
 					return;
@@ -117,7 +117,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!ies) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc ies %d bytes\n",
+					  "%s:%d event %u Failed to alloc ies %zu bytes\n",
 					  __func__, __LINE__, event, data->auth.ies_len);
 					os_free(msg.data);
 					return;
@@ -134,7 +134,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!frame) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc frame %d bytes\n",
+					  "%s:%d event %u Failed to alloc frame %zu bytes\n",
 					  __func__, __LINE__, event, data->rx_mgmt.frame_len);
 					os_free(msg.data);
 					return;
@@ -152,7 +152,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!frame) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc frame %d bytes\n",
+					  "%s:%d event %u Failed to alloc frame %zu bytes\n",
 					  __func__, __LINE__, event, data->tx_status.data_len);
 					os_free(msg.data);
 					return;
@@ -183,7 +183,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!req_ies) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc req_ies %d bytes\n",
+					  "%s:%d event %u Failed to alloc req_ies %zu bytes\n",
 					  __func__, __LINE__, event, data->assoc_info.req_ies_len);
 					os_free(msg.data);
 					os_free(addr);
@@ -199,7 +199,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!resp_ies) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc resp_ies %d bytes\n",
+					  "%s:%d event %u Failed to alloc resp_ies %zu bytes\n",
 					  __func__, __LINE__, event, data->assoc_info.resp_ies_len);
 					os_free(msg.data);
 					os_free(addr);
@@ -217,7 +217,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!resp_frame) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc resp_frame %d bytes\n",
+					  "%s:%d event %u Failed to alloc resp_frame %zu bytes\n",
 					  __func__, __LINE__, event, data->assoc_info.resp_frame_len);
 					os_free(msg.data);
 					os_free(addr);
@@ -252,7 +252,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!resp_ies) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc resp_ies %d bytes\n",
+					  "%s:%d event %u Failed to alloc resp_ies %zu bytes\n",
 					  __func__, __LINE__,  event, data->assoc_reject.resp_ies_len);
 					os_free(msg.data);
 					os_free(bssid);
@@ -282,7 +282,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!ie) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc ie %d bytes\n",
+					  "%s:%d event %u Failed to alloc ie %zu bytes\n",
 					  __func__, __LINE__,  event, data->deauth_info.ie_len);
 					os_free(msg.data);
 					os_free(sa);
@@ -311,7 +311,7 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 				if (!ie) {
 					wpa_printf(MSG_ERROR,
-					  "%s:%d event %u Failed to alloc ie %d bytes\n",
+					  "%s:%d event %u Failed to alloc ie %zu bytes\n",
 					  __func__, __LINE__,  event, data->disassoc_info.ie_len);
 					os_free(msg.data);
 					os_free(sa);
@@ -377,6 +377,25 @@ void wpa_supplicant_event_wrapper(void *ctx,
 			data_tmp->unprot_disassoc.sa = sa;
 			os_memcpy(da, data->unprot_disassoc.da, ETH_ALEN);
 			data_tmp->unprot_disassoc.da = da;
+		} else if (event == EVENT_NAN_CLUSTER_JOIN) {
+			union wpa_event_data *data_tmp = msg.data;
+			char *cluster_id;
+
+			if (data->nan_cluster_join_info.bssid != NULL) {
+				cluster_id = os_zalloc(ETH_ALEN);
+				if (cluster_id == NULL) {
+					wpa_printf(MSG_ERROR,
+						   "%s: event %u failed to allocate cluster ID",
+						   __func__, event);
+					os_free(msg.data);
+					return;
+				}
+				os_memcpy(cluster_id,
+					  data->nan_cluster_join_info.bssid,
+					  ETH_ALEN);
+				data_tmp->nan_cluster_join_info.bssid =
+					cluster_id;
+			}
 		}
 	}
 
@@ -385,6 +404,12 @@ void wpa_supplicant_event_wrapper(void *ctx,
 
 void wpa_drv_zep_event_chan_list_changed(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 	if (if_ctx->hapd)
 		hostapd_event_wrapper(if_ctx->hapd, EVENT_CHANNEL_LIST_CHANGED, event);
@@ -397,6 +422,10 @@ void wpa_drv_zep_event_chan_list_changed(struct zep_drv_if_ctx *if_ctx, union wp
 
 void wpa_drv_zep_event_mac_changed(struct zep_drv_if_ctx *if_ctx)
 {
+	if (!if_ctx) {
+		wpa_printf(MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 	const struct net_linkaddr *link_addr = NULL;
 
@@ -458,6 +487,12 @@ void wpa_drv_zep_scan_timeout(void *eloop_ctx, void *timeout_ctx)
 
 void wpa_drv_zep_event_proc_scan_start(struct zep_drv_if_ctx *if_ctx)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_SCAN_STARTED,
 			NULL);
@@ -467,6 +502,12 @@ void wpa_drv_zep_event_proc_scan_start(struct zep_drv_if_ctx *if_ctx)
 void wpa_drv_zep_event_proc_scan_done(struct zep_drv_if_ctx *if_ctx,
 				      union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	eloop_cancel_timeout(wpa_drv_zep_scan_timeout,
 			     if_ctx,
 			     if_ctx->supp_if_ctx);
@@ -487,6 +528,12 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 	struct wpa_scan_res **tmp = NULL;
 	size_t scan_res_len  = sizeof(struct wpa_scan_res) + r->ie_len + r->beacon_ie_len;
 
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	if (!if_ctx->scan_res2)
 		return;
 
@@ -501,7 +548,7 @@ void wpa_drv_zep_event_proc_scan_res(struct zep_drv_if_ctx *if_ctx,
 
 	struct wpa_scan_res *sr = os_zalloc(scan_res_len);
 	if (!sr) {
-		wpa_printf(MSG_ERROR, "%s: Failed to alloc scan results(%d bytes)", __func__, scan_res_len);
+		wpa_printf(MSG_ERROR, "%s: Failed to alloc scan results(%zu bytes)", __func__, scan_res_len);
 		if_ctx->scan_res2->res = tmp;
 		goto err;
 	}
@@ -527,6 +574,12 @@ err:
  */
 void wpa_drv_zep_event_proc_sched_scan_stopped(struct zep_drv_if_ctx *if_ctx)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_SCHED_SCAN_STOPPED,
 			NULL);
@@ -535,6 +588,13 @@ void wpa_drv_zep_event_proc_sched_scan_stopped(struct zep_drv_if_ctx *if_ctx)
 void wpa_drv_zep_event_proc_auth_resp(struct zep_drv_if_ctx *if_ctx,
 				      union wpa_event_data *event)
 {
+
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			     EVENT_AUTH,
 			     event);
@@ -545,6 +605,12 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 				       union wpa_event_data *event,
 				       unsigned int status)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	if (status != WLAN_STATUS_SUCCESS) {
 		if (if_ctx->ft_roaming) {
 			if_ctx->ft_roaming = false;
@@ -573,6 +639,12 @@ void wpa_drv_zep_event_proc_deauth(struct zep_drv_if_ctx *if_ctx,
 				union wpa_event_data *event, const struct ieee80211_mgmt *mgmt)
 {
 	const u8 *bssid = NULL;
+
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 
 	bssid = mgmt->bssid;
 
@@ -605,12 +677,38 @@ void wpa_drv_zep_event_proc_deauth(struct zep_drv_if_ctx *if_ctx,
 void wpa_drv_zep_event_proc_disassoc(struct zep_drv_if_ctx *if_ctx,
 				     union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_DISASSOC,
 			event);
 }
 
 #if CONFIG_WIFI_NM_WPA_SUPPLICANT_NAN
+static void wpa_drv_zep_event_proc_nan_cluster_join(
+		struct zep_drv_if_ctx *if_ctx, const u8 *cluster_id,
+		bool new_cluster)
+{
+	union wpa_event_data event;
+
+	if ((if_ctx == NULL) || (cluster_id == NULL)) {
+		wpa_printf(MSG_WARNING,
+			   "%s: Missing NAN cluster event context/data",
+			   __func__);
+		return;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.nan_cluster_join_info.bssid = cluster_id;
+	event.nan_cluster_join_info.new_cluster = new_cluster;
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
+				     EVENT_NAN_CLUSTER_JOIN, &event);
+}
+
 /**
  * is_nan_sdf_frame - Check if frame is a NAN Service Discovery Frame
  * @frame: Frame data
@@ -653,6 +751,12 @@ static void wpa_drv_zep_event_mgmt_tx_status(struct zep_drv_if_ctx *if_ctx,
 	const struct ieee80211_hdr *hdr;
 	u16 fc;
 
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	wpa_printf(MSG_DEBUG, "wpa_supp: Frame TX status event");
 
 	hdr = (const struct ieee80211_hdr *) frame;
@@ -690,6 +794,11 @@ static void wpa_drv_zep_event_mgmt_tx_status(struct zep_drv_if_ctx *if_ctx,
 static void wpa_drv_zep_event_proc_unprot_deauth(struct zep_drv_if_ctx *if_ctx,
 						 union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_UNPROT_DEAUTH,
 			event);
@@ -698,6 +807,11 @@ static void wpa_drv_zep_event_proc_unprot_deauth(struct zep_drv_if_ctx *if_ctx,
 static void wpa_drv_zep_event_proc_unprot_disassoc(struct zep_drv_if_ctx *if_ctx,
 						   union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 			EVENT_UNPROT_DISASSOC,
 			event);
@@ -940,6 +1054,11 @@ static int phy_info_band_cfg(struct phy_info_arg *phy_info,
 
 static void wpa_drv_zep_event_get_wiphy(struct zep_drv_if_ctx *if_ctx, void *band_info)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 	if (!band_info) {
 		/* Done with all bands */
 		k_sem_give(&if_ctx->drv_resp_sem);
@@ -958,7 +1077,9 @@ static int wpa_drv_register_frame(struct zep_drv_if_ctx *if_ctx,
 
 	dev_ops = get_dev_ops(if_ctx->dev_ctx);
 	if (!dev_ops || !dev_ops->register_frame) {
-		wpa_printf(MSG_ERROR, "%s: register_frame op not supported", __func__);
+		/* Return success - this op is optional for drivers that
+		 * receive mgmt frames through other mechanisms. */
+		wpa_printf(MSG_DEBUG, "%s: register_frame op not supported", __func__);
 		goto out;
 	}
 
@@ -1019,6 +1140,12 @@ static void wpa_drv_zep_event_mgmt_rx(struct zep_drv_if_ctx *if_ctx,
 	u16 fc, stype;
 	int rx_freq = 0;
 
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	wpa_printf(MSG_MSGDUMP, "wpa_supp: Frame event");
 	mgmt = (const struct ieee80211_mgmt *)frame;
 
@@ -1055,6 +1182,10 @@ static void wpa_drv_zep_event_mgmt_rx(struct zep_drv_if_ctx *if_ctx,
 
 static void wpa_drv_zep_event_ecsa_complete(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 	if (if_ctx->hapd)
 		hostapd_event_wrapper(if_ctx->hapd, EVENT_CH_SWITCH, event);
@@ -1066,6 +1197,10 @@ static void wpa_drv_zep_event_ecsa_complete(struct zep_drv_if_ctx *if_ctx, union
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 static void wpa_drv_zep_event_dfs_cac_started(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(MSG_WARNING, "%s: if_ctx is not inited", __func__);
+		return;
+	}
 	if (if_ctx->hapd)
 		hostapd_event_wrapper(if_ctx->hapd, EVENT_DFS_CAC_STARTED, event);
 	else
@@ -1074,6 +1209,10 @@ static void wpa_drv_zep_event_dfs_cac_started(struct zep_drv_if_ctx *if_ctx, uni
 
 static void wpa_drv_zep_event_dfs_cac_finished(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(MSG_WARNING, "%s: if_ctx is not inited", __func__);
+		return;
+	}
 	if (if_ctx->hapd)
 		hostapd_event_wrapper(if_ctx->hapd, EVENT_DFS_CAC_FINISHED, event);
 	else
@@ -1084,6 +1223,11 @@ static void wpa_drv_zep_event_dfs_cac_finished(struct zep_drv_if_ctx *if_ctx, un
 static void wpa_drv_zep_event_signal_change(struct zep_drv_if_ctx *if_ctx,
 					    union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx, EVENT_SIGNAL_CHANGE, event);
 }
 
@@ -1091,6 +1235,12 @@ static void wpa_drv_zep_event_roc_complete(struct zep_drv_if_ctx *if_ctx,
 					    int freq, unsigned int duration, u64 cookie)
 {
 	union wpa_event_data event;
+
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 
 	if (cookie != if_ctx->remain_on_channel_cookie) {
 		wpa_printf(MSG_DEBUG, "wpa_supp: No matching cookie found for ROC complete event");
@@ -1109,6 +1259,12 @@ static void wpa_drv_zep_event_roc_cancel_complete(struct zep_drv_if_ctx *if_ctx,
 {
 	union wpa_event_data event;
 
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
+
 	if (cookie == if_ctx->remain_on_channel_cookie) {
 		os_memset(&event, 0, sizeof(event));
 		event.remain_on_channel.freq = freq;
@@ -1120,6 +1276,11 @@ static void wpa_drv_zep_event_roc_cancel_complete(struct zep_drv_if_ctx *if_ctx,
 static void wpa_drv_zep_event_cookie_event(struct zep_drv_if_ctx *if_ctx,
 					  u64 host_cookie, u64 cookie)
 {
+	if (!if_ctx) {
+		wpa_printf(
+		    MSG_WARNING, "%s: Missing interface context", __func__);
+		return;
+	}
 	if (if_ctx->pending_remain_on_channel) {
 		if_ctx->remain_on_channel_cookie = cookie;
 		if_ctx->pending_remain_on_channel = false;
@@ -1221,7 +1382,8 @@ wpa_driver_wpa_supp_postprocess_modes(struct hostapd_hw_modes *modes,
 
 struct hostapd_hw_modes *wpa_drv_zep_get_hw_feature_data(void *priv,
 		u16 *num_modes,
-		u16 *flags, u8 *dfs_domain)
+		u16 *flags, u8 *dfs_domain,
+		char *alpha2, size_t alpha2_len)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops;
@@ -1229,6 +1391,9 @@ struct hostapd_hw_modes *wpa_drv_zep_get_hw_feature_data(void *priv,
 	int ret = -1;
 
 	if_ctx = priv;
+
+	if (alpha2 && alpha2_len)
+		alpha2[0] = '\0';
 
 	dev_ops = get_dev_ops(if_ctx->dev_ctx);
 	if (!dev_ops || !dev_ops->get_wiphy) {
@@ -1310,7 +1475,8 @@ static void wpa_drv_zep_global_deinit(void *priv)
  */
 static void *wpa_drv_zep_init(void *ctx,
 			      const char *ifname,
-			      void *global_priv)
+			      void *global_priv,
+			      enum wpa_p2p_mode p2p_mode)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops;
@@ -1366,6 +1532,9 @@ static void *wpa_drv_zep_init(void *ctx,
 	callbk_fns.roc_complete = wpa_drv_zep_event_roc_complete;
 	callbk_fns.roc_cancel_complete = wpa_drv_zep_event_roc_cancel_complete;
 	callbk_fns.cookie_event = wpa_drv_zep_event_cookie_event;
+#if CONFIG_WIFI_NM_WPA_SUPPLICANT_NAN
+	callbk_fns.nan_cluster_join = wpa_drv_zep_event_proc_nan_cluster_join;
+#endif /* CONFIG_WIFI_NM_WPA_SUPPLICANT_NAN */
 
 	if_ctx->dev_priv = dev_ops->init(if_ctx,
 					 ifname,
@@ -1413,6 +1582,11 @@ static void wpa_drv_zep_deinit(void *priv)
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 static void wpa_drv_zep_event_acs_channel_selected(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
 {
+	if (!if_ctx) {
+		wpa_printf(MSG_WARNING, "%s: if_ctx is not inited", __func__);
+		return;
+	}
+
 	if (if_ctx->hapd)
 		hostapd_event_wrapper(if_ctx->hapd, EVENT_ACS_CHANNEL_SELECTED, event);
 	else
@@ -1491,16 +1665,27 @@ static void wpa_drv_zep_hapd_deinit(void *priv)
 	struct zep_drv_if_ctx *if_ctx              = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
 
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid params", __func__);
+		return;
+	}
+
 	if_ctx = priv;
 
-	dev_ops = (struct zep_wpa_supp_dev_ops *)if_ctx->dev_ops;
-	if (!dev_ops->hapd_deinit) {
+	if (!if_ctx->dev_ctx) {
+		wpa_printf(MSG_ERROR, "%s: dev_ctx is NULL", __func__);
+		goto out;
+	}
+
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->hapd_deinit) {
 		wpa_printf(MSG_ERROR, "%s: No op registered for hapd deinit", __func__);
-		return;
+		goto out;
 	}
 
 	dev_ops->hapd_deinit(if_ctx->dev_priv);
 
+out:
 	os_free(if_ctx);
 }
 
@@ -1922,6 +2107,15 @@ static int wpa_drv_zep_associate(void *priv,
 			goto out;
 		}
 
+		/* For non-SME drivers authenticate() is not called, so cache
+		 * the SSID here to keep wpa_drv_zep_get_ssid() functional
+		 * after association.
+		 */
+		if (params->ssid && params->ssid_len > 0) {
+			os_memcpy(if_ctx->ssid, params->ssid, params->ssid_len);
+			if_ctx->ssid_len = params->ssid_len;
+		}
+
 		ret = dev_ops->associate(if_ctx->dev_priv,
 				   params);
 	} else {
@@ -1986,7 +2180,7 @@ static int _wpa_drv_zep_set_key(void *priv,
 	}
 
 	wpa_printf(MSG_DEBUG, "%s: priv:%p alg %d addr %p key_idx %d set_tx %d seq %p "
-		   "seq_len %d key %p key_len %d key_flag %x",
+		   "seq_len %zu key %p key_len %zu key_flag %x",
 		   __func__,
 		   if_ctx->dev_priv,
 		   alg, addr,
@@ -2088,7 +2282,7 @@ static int wpa_drv_zep_get_ssid(void *priv,
 	if_ctx = priv;
 
 	wpa_printf(MSG_DEBUG,
-		   "%s: SSID size: %d",
+		   "%s: SSID size: %zu",
 		   __func__,
 		   if_ctx->ssid_len);
 
@@ -2232,7 +2426,7 @@ static int wpa_drv_zep_send_action(void *priv, unsigned int freq,
 		const u8 *dst, const u8 *src,
 		const u8 *bssid,
 		const u8 *data, size_t data_len,
-		int no_cck)
+		int no_cck, int link_id)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops;
@@ -2381,6 +2575,157 @@ static int wpa_drv_zep_get_country(void *priv, char *alpha2)
 out:
 	return ret;
 }
+
+#ifdef CONFIG_NAN
+static int wpa_drv_zep_nan_start(void *priv,
+				 const struct nan_cluster_config *conf)
+{
+	struct zep_drv_if_ctx *if_ctx;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret;
+
+	if (!priv || !conf) {
+		wpa_printf(MSG_ERROR, "%s: Invalid parameters", __func__);
+		return -1;
+	}
+
+	if_ctx = priv;
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->nan_start) {
+		wpa_printf(MSG_ERROR, "%s: nan_start operation not supported",
+			   __func__);
+		return -1;
+	}
+
+	ret = dev_ops->nan_start(if_ctx->dev_priv, conf);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: nan_start operation failed: %d",
+			   __func__, ret);
+	}
+
+	return ret;
+}
+
+static int wpa_drv_zep_nan_change_config(
+	void *priv, const struct nan_cluster_config *conf)
+{
+	struct zep_drv_if_ctx *if_ctx;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret;
+
+	if (!priv || !conf) {
+		wpa_printf(MSG_ERROR, "%s: Invalid parameters", __func__);
+		return -1;
+	}
+
+	if_ctx = priv;
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->nan_change_config) {
+		wpa_printf(MSG_ERROR,
+			   "%s: nan_change_config operation not supported",
+			   __func__);
+		return -1;
+	}
+
+	ret = dev_ops->nan_change_config(if_ctx->dev_priv, conf);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "%s: nan_change_config operation failed: %d",
+			   __func__, ret);
+	}
+
+	return ret;
+}
+
+static void wpa_drv_zep_nan_stop(void *priv)
+{
+	struct zep_drv_if_ctx *if_ctx;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle", __func__);
+		return;
+	}
+
+	if_ctx = priv;
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->nan_stop) {
+		wpa_printf(MSG_ERROR, "%s: nan_stop operation not supported",
+			   __func__);
+		return;
+	}
+
+	dev_ops->nan_stop(if_ctx->dev_priv);
+}
+
+static int wpa_drv_zep_nan_config_schedule(
+	void *priv, u8 map_id, struct nan_schedule_config *conf)
+{
+	struct zep_drv_if_ctx *if_ctx;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle", __func__);
+		return -1;
+	}
+
+	if_ctx = priv;
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->nan_config_schedule) {
+		wpa_printf(MSG_ERROR,
+			   "%s: nan_config_schedule operation not supported",
+			   __func__);
+		return -1;
+	}
+
+	/* conf == NULL is valid and clears the current schedule. */
+	ret = dev_ops->nan_config_schedule(if_ctx->dev_priv, map_id, conf);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "%s: nan_config_schedule operation failed: %d",
+			   __func__, ret);
+	}
+
+	return ret;
+}
+
+static int wpa_drv_zep_nan_config_peer_schedule(
+	void *priv, const u8 *peer, u16 cdw, u8 sequence_id,
+	u16 max_chan_switch_time, const struct wpabuf *ulw,
+	struct nan_peer_schedule_config *sched)
+{
+	struct zep_drv_if_ctx *if_ctx;
+	const struct zep_wpa_supp_dev_ops *dev_ops;
+	int ret;
+
+	if (!priv || !peer || !sched) {
+		wpa_printf(MSG_ERROR, "%s: Invalid parameters", __func__);
+		return -1;
+	}
+
+	if_ctx = priv;
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->nan_config_peer_schedule) {
+		wpa_printf(MSG_ERROR,
+			   "%s: nan_config_peer_schedule operation not supported",
+			   __func__);
+		return -1;
+	}
+
+	ret = dev_ops->nan_config_peer_schedule(if_ctx->dev_priv, peer, cdw,
+						sequence_id,
+						max_chan_switch_time, ulw,
+						sched);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "%s: nan_config_peer_schedule operation failed: %d",
+			   __func__, ret);
+	}
+
+	return ret;
+}
+#endif /* CONFIG_NAN */
 
 #ifdef CONFIG_AP
 #ifndef CONFIG_WIFI_NM_HOSTAPD_AP
@@ -2618,6 +2963,7 @@ out:
 	if (if_ctx) {
 		if_ctx->beacon_set = false;
 		if_ctx->ap_probe_req_listen = false;
+		if_ctx->probe_req_set = false;
 	}
 	return ret;
 }
@@ -2649,10 +2995,10 @@ int wpa_drv_zep_deinit_ap(void *priv)
 		goto out;
 	}
 	if_ctx->ap_probe_req_listen = false;
-
 out:
 	if (if_ctx) {
 		if_ctx->beacon_set = false;
+		if_ctx->probe_req_set = false;
 	}
 	return ret;
 }
@@ -2754,7 +3100,8 @@ out:
 	return ret;
 }
 
-int wpa_drv_zep_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr, u16 reason_code)
+int wpa_drv_zep_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr,
+			     u16 reason_code, int link_id)
 {
 	struct zep_drv_if_ctx *if_ctx = priv;
 	const struct zep_wpa_supp_dev_ops *dev_ops;
@@ -2858,9 +3205,7 @@ out:
 int wpa_drv_hapd_send_eapol(void *priv, const u8 *addr, const u8 *data, size_t data_len,
                             int encrypt, const u8 *own_addr, u32 flags, int link_id)
 {
-#ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 	struct zep_drv_if_ctx *if_ctx = priv;
-	struct hostapd_data *hapd     = NULL;
 	int ret                       = -1;
 
 	/* TODO: Unused for now, but might need for rekeying */
@@ -2870,47 +3215,36 @@ int wpa_drv_hapd_send_eapol(void *priv, const u8 *addr, const u8 *data, size_t d
 	/* Unused till Wi-Fi7 MLO is supported in Zephyr */
 	(void)link_id;
 
-	hapd = if_ctx->hapd;
-
-	wpa_printf(MSG_DEBUG, "hostapd: Send EAPOL frame (encrypt=%d)", encrypt);
-
-	ret = l2_packet_send(hapd->l2, addr, ETH_P_EAPOL, data, data_len);
-	if (ret < 0) {
-		wpa_printf(MSG_ERROR, "%s: l2_packet_send failed: %d", __func__, ret);
-		goto out;
-	}
-#else
-	struct zep_drv_if_ctx *if_ctx = priv;
-	const struct zep_wpa_supp_dev_ops *dev_ops;
-	int ret = -1;
-	struct wpa_supplicant *wpa_s = NULL;
-
-	/* TODO: Unused for now, but might need for rekeying */
-	(void)own_addr;
-	(void)flags;
-	(void)encrypt;
-
-	wpa_s = if_ctx->supp_if_ctx;
-	dev_ops = get_dev_ops(if_ctx->dev_ctx);
-	if (!dev_ops) {
-		wpa_printf(MSG_ERROR, "%s: get_dev_ops failed", __func__);
-		goto out;
-	}
-
-	wpa_printf(MSG_DEBUG, "wpa_supp: Send EAPOL frame (encrypt=%d)", encrypt);
-
-	ret = l2_packet_send(wpa_s->l2, addr, ETH_P_EAPOL, data, data_len);
-	if (ret < 0) {
-		wpa_printf(MSG_ERROR, "%s: l2_packet_send failed: %d", __func__, ret);
-		goto out;
-	}
+#ifdef CONFIG_WIFI_NM_HOSTAPD_AP
+	if (if_ctx->hapd != NULL) {
+		struct hostapd_data *hapd = if_ctx->hapd;
+		wpa_printf(MSG_DEBUG, "hostapd: Send EAPOL frame (encrypt=%d)", encrypt);
+		ret = l2_packet_send(hapd->l2, addr, ETH_P_EAPOL, data, data_len);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR, "%s: l2_packet_send failed: %d", __func__, ret);
+			goto out;
+		}
+	} else
 #endif
+	{
+		/* wpa_supplicant path: STA or P2P GO */
+		struct wpa_supplicant *wpa_s = if_ctx->supp_if_ctx;
+		if (wpa_s == NULL) {
+			wpa_printf(MSG_ERROR, "%s: wpa_s is NULL", __func__);
+			goto out;
+		}
+		wpa_printf(MSG_DEBUG, "wpa_supp: Send EAPOL frame (encrypt=%d)", encrypt);
+		ret = l2_packet_send(wpa_s->l2, addr, ETH_P_EAPOL, data, data_len);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR, "%s: l2_packet_send failed: %d", __func__, ret);
+			goto out;
+		}
+	}
 
 	ret = 0;
 out:
 	return ret;
 }
-
 
 int wpa_drv_zep_get_inact_sec(void *priv, const u8 *addr)
 {
@@ -2971,7 +3305,8 @@ out:
 }
 
 int wpa_drv_zep_remain_on_channel(void *priv, unsigned int freq,
-				  unsigned int duration)
+				  unsigned int duration,
+				  const u8 *filter_addr)
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
@@ -3154,6 +3489,13 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.get_conn_info = wpa_drv_zep_get_conn_info,
 	.set_country = wpa_drv_zep_set_country,
 	.get_country = wpa_drv_zep_get_country,
+#ifdef CONFIG_NAN
+	.nan_start = wpa_drv_zep_nan_start,
+	.nan_change_config = wpa_drv_zep_nan_change_config,
+	.nan_stop = wpa_drv_zep_nan_stop,
+	.nan_config_schedule = wpa_drv_zep_nan_config_schedule,
+	.nan_config_peer_schedule = wpa_drv_zep_nan_config_peer_schedule,
+#endif /* CONFIG_NAN */
 #ifdef CONFIG_AP
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
 	.hapd_init = wpa_drv_zep_hapd_init,

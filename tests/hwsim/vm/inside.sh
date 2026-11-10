@@ -8,12 +8,16 @@ mount --bind /etc /tmp/etc
 mount tmpfs -t tmpfs /etc
 # we need our own /dev/rfkill, and don't want device access
 mount tmpfs -t tmpfs /dev
-# some sockets go into /var/run, and / is read-only
-mount tmpfs -t tmpfs /var/run
+# make /var and /run writable and hide the host data
+# /var/run is expected to be a symlink to /run
+mount tmpfs -t tmpfs /var
+mount tmpfs -t tmpfs /run
+ln -s /run /var/run
 mount proc -t proc /proc
 mount sysfs -t sysfs /sys
 # needed for tracing
 mount debugfs -t debugfs /sys/kernel/debug
+mount tracefs -t tracefs /sys/kernel/tracing
 
 mkdir /tmp/wireshark-share
 mount --bind /usr/share/wireshark /tmp/wireshark-share
@@ -108,7 +112,8 @@ ip link set lo up
 # create logs mountpoint and mount the logshare
 mkdir /tmp/logs
 if grep -q rootfstype=hostfs /proc/cmdline; then
-    mount -t hostfs none /tmp/logs -o $LOGDIR
+    mount -t hostfs none /tmp/logs -o hostfs=$LOGDIR || \
+    mount -t hostfs none /tmp/logs -o $LOGDIR || exit 2
 else
     mount -t 9p -o trans=virtio,rw logshare /tmp/logs
 fi

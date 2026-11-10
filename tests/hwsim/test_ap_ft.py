@@ -140,7 +140,7 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
               roam_with_reassoc=False, also_non_ft=False, only_one_way=False,
               wait_before_roam=0, return_after_initial=False, ieee80211w="1",
               sae_transition=False, beacon_prot=False, sae_ext_key=False,
-              check_ssid=False):
+              check_ssid=False, gtk_rekey=False):
     logger.info("Connect to first AP")
 
     copts = {}
@@ -221,7 +221,10 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
             hwsim_utils.test_connectivity_iface(dev, hapd1ap, conndev)
         else:
             hwsim_utils.test_connectivity(dev, hapd1ap)
-
+    if gtk_rekey:
+        ev = dev.wait_event(["RSN: Group rekeying completed"], timeout=2)
+        if ev is None:
+            raise Exception("GTK rekey timed out after initial association")
     if return_after_initial:
         return ap2['bssid']
 
@@ -263,6 +266,10 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
             else:
                 hwsim_utils.test_connectivity(dev, hapd2ap)
 
+        if gtk_rekey:
+            ev = dev.wait_event(["RSN: Group rekeying completed"], timeout=2)
+            if ev is None:
+                raise Exception("GTK rekey timed out with Target AP")
         dev.dump_monitor()
         hapd1ap.dump_monitor()
         hapd2ap.dump_monitor()
@@ -374,12 +381,12 @@ def test_ap_ft_vlan(dev, apdev):
     params = ft_params1(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
 
     params = ft_params2(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1")
     if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
@@ -413,13 +420,13 @@ def test_ap_ft_vlan_disconnected(dev, apdev):
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
     params['ft_psk_generate_local'] = "1"
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
 
     params = ft_params2a(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
     params['ft_psk_generate_local'] = "1"
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1")
     if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
@@ -437,11 +444,11 @@ def test_ap_ft_vlan_2(dev, apdev):
     params = ft_params1(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
 
     params = ft_params2(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1",
               force_initial_conn_to_first_ap=True)
@@ -520,12 +527,12 @@ def test_ap_ft_many_vlan(dev, apdev):
     params = ft_params1(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
 
     params = ft_params2(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, roams=50,
               conndev="brvlan1")
@@ -862,11 +869,11 @@ def test_ap_ft_vlan_over_ds(dev, apdev):
     params = ft_params1(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
     params = ft_params2(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     dev[0].flush_scan_cache()
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True,
@@ -900,11 +907,11 @@ def test_ap_ft_vlan_over_ds_many(dev, apdev):
     params = ft_params1(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
     params = ft_params2(ssid=ssid, passphrase=passphrase)
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     dev[0].flush_scan_cache()
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True,
@@ -1115,12 +1122,12 @@ def test_ap_ft_over_ds_pull_vlan(dev, apdev):
     params["pmk_r1_push"] = "0"
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    hapd0 = hostapd.add_ap(apdev[0], params)
     params = ft_params2(ssid=ssid, passphrase=passphrase)
     params["pmk_r1_push"] = "0"
     params['dynamic_vlan'] = "1"
     params['accept_mac_file'] = filename
-    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+    hapd1 = hostapd.add_ap(apdev[1], params)
 
     dev[0].flush_scan_cache()
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True,
@@ -1132,7 +1139,8 @@ def start_ft_sae(dev, apdev, wpa_ptk_rekey=None, sae_pwe=None,
                  rsne_override=None, rsnxe_override=None,
                  no_beacon_rsnxe2=False, ext_key_id=False,
                  skip_prune_assoc=False, ft_rsnxe_used=False,
-                 sae_transition=False, ext_key=False, sae_groups=None):
+                 sae_transition=False, ext_key=False, sae_groups=None,
+                 wpa_gtk_rekey=None):
     check_sae_capab(dev)
     ssid = "test-ft"
     passphrase = "12345678"
@@ -1143,6 +1151,8 @@ def start_ft_sae(dev, apdev, wpa_ptk_rekey=None, sae_pwe=None,
     params['wpa_key_mgmt'] = key_mgmt
     if wpa_ptk_rekey:
         params['wpa_ptk_rekey'] = str(wpa_ptk_rekey)
+    if wpa_gtk_rekey:
+        params['wpa_group_rekey'] = str(wpa_gtk_rekey)
     if sae_pwe is not None:
         params['sae_pwe'] = sae_pwe
     if rsne_override:
@@ -1163,6 +1173,8 @@ def start_ft_sae(dev, apdev, wpa_ptk_rekey=None, sae_pwe=None,
         params['wpa_key_mgmt'] = key_mgmt
     if wpa_ptk_rekey:
         params['wpa_ptk_rekey'] = str(wpa_ptk_rekey)
+    if wpa_gtk_rekey:
+        params['wpa_group_rekey'] = str(wpa_gtk_rekey)
     if sae_pwe is not None:
         params['sae_pwe'] = sae_pwe
     if rsne_override:
@@ -1221,6 +1233,55 @@ def test_ap_ft_sae_h2e_and_loop2(dev, apdev):
         run_roams(dev[0], apdev, hapd0, hapd1, "test-ft", "12345678", sae=True)
     finally:
         dev[0].set("sae_pwe", "0")
+
+def test_ap_ft_rsnxe_only_from_sta(dev, apdev):
+    """FT with RSNXE only from STA"""
+    hapd0, hapd1 = start_ft_sae(dev[0], apdev, sae_pwe="0")
+    hapd1.disable()
+    dev[0].scan_for_bss(hapd0.own_addr(), freq=2412)
+    hapd0.set("ext_mgmt_frame_handling", "1")
+    dev[0].connect("test-ft", key_mgmt="FT-SAE", sae_password="12345678",
+                   sae_pwe="2", wait_connect=False)
+
+    for j in range(2):
+        for i in range(0, 10):
+            req = hapd0.mgmt_rx()
+            if req is None:
+                raise Exception("MGMT RX wait timed out (authentication)")
+            if req['subtype'] == 11:
+                break
+            req = None
+        if not req:
+            raise Exception("Authentication frame not received")
+
+        hapd0.request("MGMT_RX_PROCESS freq=2412 datarate=0 ssi_signal=-30 frame=" + binascii.hexlify(req['frame']).decode())
+
+    for i in range(0, 10):
+        req = hapd0.mgmt_rx()
+        if req is None:
+            raise Exception("MGMT RX wait timed out (association)")
+        if req['subtype'] == 0:
+            break
+        req = None
+    if not req:
+        raise Exception("Association Request frame not received")
+
+    hapd0.request("MGMT_RX_PROCESS freq=2412 datarate=0 ssi_signal=-30 frame=" + binascii.hexlify(req['frame']).decode())
+    ev = hapd0.wait_event(["MGMT-TX-STATUS"], timeout=5)
+    if ev is None:
+        raise Exception("Management frame TX status not reported (1)")
+    if "stype=1 ok=1" not in ev:
+        raise Exception("Unexpected management frame TX status (1): " + ev)
+    cmd = "MGMT_TX_STATUS_PROCESS %s" % (" ".join(ev.split(' ')[1:4]))
+    if "OK" not in hapd0.request(cmd):
+        raise Exception("MGMT_TX_STATUS_PROCESS failed")
+
+    dev[0].wait_connected()
+    hapd0.set("ext_mgmt_frame_handling", "0")
+
+    ies = parse_ie(binascii.hexlify(req['payload'][4:]))
+    if 244 not in ies:
+        raise Exception("RSNXE not included in Association Request frame for initial mobility domain association")
 
 def test_ap_ft_sae_h2e_downgrade_attack(dev, apdev):
     """WPA2-PSK-FT-SAE AP (H2E downgrade attack)"""
@@ -1546,6 +1607,26 @@ def test_ap_ft_sae_ext_key_19(dev, apdev):
     run_roams(dev[0], apdev, hapd0, hapd1, "test-ft", "12345678", sae=True,
               sae_ext_key=True)
     dev[0].set("sae_groups", "")
+
+def run_ap_ft_sae_ext_key_gtk_rekey(dev, apdev, sae_group):
+    """WPA2-FT-SAE-EXT-KEY AP with GTK Rekey"""
+    hapd0, hapd1 = start_ft_sae(dev[0], apdev, ext_key=True,
+                                sae_groups=str(sae_group), wpa_gtk_rekey=1)
+    dev[0].set("sae_groups", str(sae_group))
+    run_roams(dev[0], apdev, hapd0, hapd1, "test-ft", "12345678", sae=True,
+              sae_ext_key=True, gtk_rekey=True)
+
+def test_ap_ft_sae_ext_key_gtk_rekey_group_19(dev, apdev):
+    """WPA2-FT-SAE-EXT-KEY AP with GTK Rekey(group 19)"""
+    run_ap_ft_sae_ext_key_gtk_rekey(dev, apdev, 19)
+
+def test_ap_ft_sae_ext_key_gtk_rekey_group_20(dev, apdev):
+    """WPA2-FT-SAE-EXT-KEY AP with GTK Rekey(group 20)"""
+    run_ap_ft_sae_ext_key_gtk_rekey(dev, apdev, 20)
+
+def test_ap_ft_sae_ext_key_gtk_rekey_group_21(dev, apdev):
+    """WPA2-FT-SAE-EXT-KEY AP with GTK Rekey(group 21)"""
+    run_ap_ft_sae_ext_key_gtk_rekey(dev, apdev, 21)
 
 def test_ap_ft_sae_ext_key_20(dev, apdev):
     """WPA2-FT-SAE-EXT-KEY AP (group 20)"""

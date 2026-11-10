@@ -63,6 +63,7 @@ def check_group_mgmt_cipher(dev, ap, cipher, sta_req_cipher=None):
     hwsim_utils.test_connectivity(dev, hapd)
     hapd.request("DEAUTHENTICATE ff:ff:ff:ff:ff:ff")
     dev.wait_disconnected()
+    time.sleep(0.1)
     if wt.get_bss_counter('valid_bip_mmie', ap['bssid']) < 1:
         raise Exception("No valid BIP MMIE seen")
     if wt.get_bss_counter('bip_deauth', ap['bssid']) < 1:
@@ -226,20 +227,34 @@ def test_ap_cipher_tkip_countermeasures_sta2(dev, apdev):
     dev[0].connect("tkip-countermeasures", psk="12345678",
                    pairwise="TKIP", group="TKIP", scan_freq="2412")
     dev[0].dump_monitor()
+    hapd.wait_sta()
     id = dev[1].connect("tkip-countermeasures", psk="12345678",
                         pairwise="TKIP", group="TKIP", scan_freq="2412")
     dev[1].dump_monitor()
+    hapd.wait_sta()
 
     hapd.cmd_execute(["echo", "-n", "ff:ff:ff:ff:ff:ff", ">", testfile],
                      shell=True)
-    ev = dev[0].wait_disconnected(timeout=10,
-                                  error="No disconnection after two Michael MIC failure")
-    if "reason=14" not in ev:
-        raise Exception("Unexpected disconnection reason: " + ev)
-    ev = dev[1].wait_disconnected(timeout=5,
-                                  error="No disconnection after two Michael MIC failure")
-    if "reason=14" not in ev:
-        raise Exception("Unexpected disconnection reason: " + ev)
+    ev0 = dev[0].wait_disconnected(timeout=10,
+                                   error="No disconnection after two Michael MIC failure")
+    ev1 = dev[1].wait_disconnected(timeout=5,
+                                   error="No disconnection after two Michael MIC failure")
+    # There is a race condition here between EAPOL-Key Request frame initiated
+    # 4-way handshake from one of the STAs being able to start before the AP
+    # has received the Michael MIC error report from the other STA. If the new
+    # 4-way handshake has been started, it is possible for the that 4-way
+    # handshake to fail due to being unable to send an EAPOL-Key frame if the
+    # AP deauthenticates the STA in the middle of that exchange. That ends up
+    # showing a different disconnection reason, so we need to accept both the
+    # normal reason code 14 for Michael MIC failures and the locally generated
+    # disconnection.
+    if "reason=14" not in ev0:
+        if "reason=1 locally_generated=1" not in ev0:
+            raise Exception("Unexpected disconnection reason (dev0): " + ev0)
+    if "reason=14" not in ev1:
+        if "reason=1 locally_generated=1" not in ev1:
+            raise Exception("Unexpected disconnection reason (dev1): " + ev1)
+
     ev = dev[0].wait_event(["CTRL-EVENT-CONNECTED"], timeout=1)
     if ev is not None:
         raise Exception("Unexpected connection during TKIP countermeasures")
@@ -535,8 +550,17 @@ def get_rx_spec(phy, keytype=KT_PTK):
             files = os.listdir(keydir)
             if keytype == KT_PTK and "station" not in files:
                 continue
-            if keytype != KT_PTK and "station" in files:
-                continue
+            try:
+                # if present, check pairwise flag
+                with open(keydir + '/conf_flags') as f:
+                    flags = int(f.read(), 0)
+                if keytype != KT_PTK and flags & (1 << 3):
+                    continue
+                if keytype == KT_PTK and not (flags & (1 << 3)):
+                    continue
+            except OSError as e:
+                if keytype != KT_PTK and "station" in files:
+                    continue
             with open(keydir + "/rx_spec") as f:
                 return f.read()
     except OSError as e:
@@ -559,8 +583,17 @@ def get_tk_replay_counter(phy, keytype=KT_PTK):
             files = os.listdir(keydir)
             if keytype == KT_PTK and "station" not in files:
                 continue
-            if keytype != KT_PTK and "station" in files:
-                continue
+            try:
+                # if present, check pairwise flag
+                with open(keydir + '/conf_flags') as f:
+                    flags = int(f.read(), 0)
+                if keytype != KT_PTK and flags & (1 << 3):
+                    continue
+                if keytype == KT_PTK and not (flags & (1 << 3)):
+                    continue
+            except OSError as e:
+                if keytype != KT_PTK and "station" in files:
+                    continue
             with open(keydir + "/replays") as f:
                 return int(f.read())
     except OSError as e:

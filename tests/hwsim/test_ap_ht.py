@@ -871,11 +871,14 @@ def test_ap_require_ht(dev, apdev):
               "require_ht": "1"}
     hapd = hostapd.add_ap(apdev[0], params)
 
-    dev[1].connect("require-ht", key_mgmt="NONE", scan_freq="2412",
-                   disable_ht="1", wait_connect=False)
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5", drv_params="extra_bss_membership_selectors=127")
+
+    wpas.connect("require-ht", key_mgmt="NONE", scan_freq="2412",
+                 disable_ht="1", wait_connect=False)
     dev[0].connect("require-ht", key_mgmt="NONE", scan_freq="2412")
-    ev = dev[1].wait_event(["CTRL-EVENT-ASSOC-REJECT"])
-    dev[1].request("DISCONNECT")
+    ev = wpas.wait_event(["CTRL-EVENT-ASSOC-REJECT"])
+    wpas.request("DISCONNECT")
     if ev is None:
         raise Exception("Association rejection timed out")
     if "status_code=27" not in ev:
@@ -912,11 +915,14 @@ def test_ap_require_ht_limited_rates(dev, apdev):
               "require_ht": "1"}
     hapd = hostapd.add_ap(apdev[0], params)
 
-    dev[1].connect("require-ht", key_mgmt="NONE", scan_freq="2412",
-                   disable_ht="1", wait_connect=False)
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5", drv_params="extra_bss_membership_selectors=127")
+
+    wpas.connect("require-ht", key_mgmt="NONE", scan_freq="2412",
+                 disable_ht="1", wait_connect=False)
     dev[0].connect("require-ht", key_mgmt="NONE", scan_freq="2412")
-    ev = dev[1].wait_event(["CTRL-EVENT-ASSOC-REJECT"])
-    dev[1].request("DISCONNECT")
+    ev = wpas.wait_event(["CTRL-EVENT-ASSOC-REJECT"])
+    wpas.request("DISCONNECT")
     if ev is None:
         raise Exception("Association rejection timed out")
     if "status_code=27" not in ev:
@@ -937,7 +943,8 @@ def test_ap_ht_40mhz_intolerant_sta(dev, apdev):
     clear_scan_cache(apdev[0])
     params = {"ssid": "intolerant",
               "channel": "6",
-              "ht_capab": "[HT40-]"}
+              "ht_capab": "[HT40-]",
+              "obss_interval": "2"}
     hapd = hostapd.add_ap(apdev[0], params)
     if hapd.get_status_field("num_sta_ht40_intolerant") != "0":
         raise Exception("Unexpected num_sta_ht40_intolerant value")
@@ -959,11 +966,53 @@ def test_ap_ht_40mhz_intolerant_sta(dev, apdev):
         raise Exception("Unexpected secondary_channel (did not disable 40 MHz)")
 
     dev[2].request("DISCONNECT")
-    time.sleep(1)
+    time.sleep(12)
     if hapd.get_status_field("num_sta_ht40_intolerant") != "0":
         raise Exception("Unexpected num_sta_ht40_intolerant value (expected 0)")
     if hapd.get_status_field("secondary_channel") != "-1":
         raise Exception("Unexpected secondary_channel (did not re-enable 40 MHz)")
+
+def test_ap_ht_20_40_switch(dev, apdev):
+    """Do a bandwidth switch from 20 to 40 MHz without doing a CSA"""
+    clear_scan_cache(apdev[0])
+    params = {"ssid": "ht_20_40",
+              "channel": "6",
+              "ht_capab": "[HT40-]"}
+    hapd = hostapd.add_ap(apdev[0], params)
+    if hapd.get_status_field("secondary_channel") != "-1":
+        raise Exception("Unexpected secondary_channel")
+
+    dev[0].connect("ht_20_40", key_mgmt="NONE", scan_freq="2437")
+    if hapd.get_status_field("secondary_channel") != "-1":
+        raise Exception("Unexpected secondary_channel")
+
+    hapd.request("SET_BW bandwidth=20 ht")
+    time.sleep(1)
+    if hapd.get_status_field("secondary_channel") != "0":
+        raise Exception("Unexpected secondary_channel")
+    sig = dev[0].request('SIGNAL_POLL').splitlines()
+    expected = (
+        'FREQUENCY=2437',
+        'WIDTH=20 MHz',
+        'CENTER_FRQ1=2437',
+    )
+    for e in expected:
+        if not e in sig:
+            raise Exception("%s not found in %r" % (e, sig))
+
+    hapd.request("SET_BW bandwidth=40 sec_channel_offset=-1 ht")
+    time.sleep(1)
+    if hapd.get_status_field("secondary_channel") != "-1":
+        raise Exception("Unexpected secondary_channel")
+    sig = dev[0].request('SIGNAL_POLL').splitlines()
+    expected = (
+        'FREQUENCY=2437',
+        'WIDTH=40 MHz',
+        'CENTER_FRQ1=2427',
+    )
+    for e in expected:
+        if not e in sig:
+            raise Exception("%s not found in %r" % (e, sig))
 
 def test_ap_ht_40mhz_intolerant_sta_deinit(dev, apdev):
     """Associated STA indicating 40 MHz intolerant and hostapd deinit"""
@@ -1231,17 +1280,26 @@ def test_prefer_ht20(dev, apdev):
 
 def test_prefer_ht40(dev, apdev):
     """Preference on HT40 over HT20"""
+    hostapd.cmd_execute(apdev[1], ['ifconfig', apdev[1]['ifname'], 'up'])
+    hostapd.cmd_execute(apdev[1], ['iw', apdev[1]['ifname'], 'scan',
+                                   'flush', 'freq', '2417'])
+    time.sleep(1)
+    hostapd.cmd_execute(apdev[1], ['ifconfig', apdev[1]['ifname'], 'down'])
+
     params = {"ssid": "test",
               "channel": "1",
               "ieee80211n": "1"}
     hapd = hostapd.add_ap(apdev[0], params)
     bssid = apdev[0]['bssid']
+
     params = {"ssid": "test",
               "channel": "1",
               "ieee80211n": "1",
               "ht_capab": "[HT40+]"}
     hapd2 = hostapd.add_ap(apdev[1], params)
     bssid2 = apdev[1]['bssid']
+    if hapd2.get_status_field("secondary_channel") != "1":
+        raise Exception("AP2 did not enable HT40+")
 
     dev[0].scan_for_bss(bssid, freq=2412)
     dev[0].scan_for_bss(bssid2, freq=2412)

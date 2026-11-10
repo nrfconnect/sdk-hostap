@@ -118,7 +118,8 @@ def test_he_spr_params(dev, apdev):
 
 def he_supported():
     cmd = subprocess.Popen(["iw", "reg", "get"], stdout=subprocess.PIPE)
-    reg = cmd.stdout.read().decode()
+    out, err = cmd.communicate()
+    reg = out.decode()
     if "@ 80)" in reg or "@ 160)" in reg:
         return True
     return False
@@ -326,21 +327,25 @@ def test_he80_params(dev, apdev):
                   "he_rts_threshold":"1"}
         hapd = hostapd.add_ap(apdev[0], params)
 
-        dev[1].connect("he", key_mgmt="NONE", scan_freq="5180",
-                       disable_vht="1", wait_connect=False)
+        wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+        wpas.interface_add("wlan5",
+                           drv_params="extra_bss_membership_selectors=126,122")
+
+        wpas.connect("he", key_mgmt="NONE", scan_freq="5180",
+                     disable_vht="1", wait_connect=False)
         dev[0].connect("he", key_mgmt="NONE", scan_freq="5180")
         dev[2].connect("he", key_mgmt="NONE", scan_freq="5180",
                        disable_sgi="1")
-        ev = dev[1].wait_event(["CTRL-EVENT-ASSOC-REJECT"])
+        ev = wpas.wait_event(["CTRL-EVENT-ASSOC-REJECT"])
         if ev is None:
             raise Exception("Association rejection timed out")
         if "status_code=104" not in ev:
             raise Exception("Unexpected rejection status code")
-        dev[1].request("DISCONNECT")
-        dev[1].request("REMOVE_NETWORK all")
-        dev[1].dump_monitor()
-        dev[1].connect("he", key_mgmt="NONE", scan_freq="5180",
-                       disable_he="1", wait_connect=False)
+        wpas.request("DISCONNECT")
+        wpas.request("REMOVE_NETWORK all")
+        wpas.dump_monitor()
+        wpas.connect("he", key_mgmt="NONE", scan_freq="5180",
+                     disable_he="1", wait_connect=False)
         hwsim_utils.test_connectivity(dev[0], hapd)
         sta0 = hapd.get_sta(dev[0].own_addr())
         sta2 = hapd.get_sta(dev[2].own_addr())
@@ -350,7 +355,7 @@ def test_he80_params(dev, apdev):
             raise Exception("dev[0] did not support SGI")
         if capab2 & 0x60 != 0:
             raise Exception("dev[2] claimed support for SGI")
-        ev = dev[1].wait_event(["CTRL-EVENT-ASSOC-REJECT"])
+        ev = wpas.wait_event(["CTRL-EVENT-ASSOC-REJECT"])
         if ev is None:
             raise Exception("Association rejection timed out (2)")
         if "status_code=124" not in ev:
@@ -690,7 +695,8 @@ def run_ap_he160_no_dfs(dev, apdev, channel, ht_capab):
         ev = hapd.wait_event(["AP-ENABLED"], timeout=2)
         if not ev:
             cmd = subprocess.Popen(["iw", "reg", "get"], stdout=subprocess.PIPE)
-            reg = cmd.stdout.readlines()
+            out, err = cmd.communicate()
+            reg = out.splitlines()
             for r in reg:
                 if b"5490" in r and b"DFS" in r:
                     raise HwsimSkip("ZA regulatory rule did not have DFS requirement removed")
@@ -735,7 +741,8 @@ def test_he160_no_ht40(dev, apdev):
         ev = hapd.wait_event(["AP-ENABLED", "AP-DISABLED"], timeout=2)
         if not ev:
             cmd = subprocess.Popen(["iw", "reg", "get"], stdout=subprocess.PIPE)
-            reg = cmd.stdout.readlines()
+            out, err = cmd.communicate()
+            reg = out.splitlines()
             for r in reg:
                 if "5490" in r and "DFS" in r:
                     raise HwsimSkip("ZA regulatory rule did not have DFS requirement removed")
@@ -1646,6 +1653,7 @@ def he_verify_wifi_version(dev):
 
 def test_he_6ghz_reg(dev, apdev):
     """TX power control on 6 GHz"""
+    check_sae_capab(dev[0])
     try:
         ssid = "HE_6GHz_regulatory"
         freq = 5975
@@ -1844,3 +1852,272 @@ def test_he_bss_color_change(dev, apdev):
         raise Exception("Expected current he_bss_color to be 20")
 
     hapd.dump_monitor()
+
+def simulate_incumbt_sig_intf(hapd, bitmap):
+    logger.info("Trigger a simulated incumbent signal interference event")
+    phyname = hapd.get_driver_status_field("phyname")
+    intf_file = '/sys/kernel/debug/ieee80211/' + phyname + '/hwsim/simulate_incumbent_signal_interference'
+    if not os.path.exists(intf_file):
+        raise HwsimSkip("Incumbent signal interference simulation not supported")
+
+    # Get primary 20 MHz center in MHz from STATUS; fallback to channel->MHz
+    freq = hapd.get_status_field("freq")
+    if freq is None:
+        ch = hapd.get_status_field("channel")
+        if ch is None:
+            raise Exception("Could not determine primary frequency for hwsim simulate")
+        freq = str(5950 + 5 * int(ch))
+    with open(intf_file, 'w') as f:
+        f.write("%s %s\n" % (freq, bitmap))
+
+def expected_values_in_ev(ev, expectation):
+    if expectation["freq"] is None:
+        # Freq should not be same after switch
+        if "freq=6195" in ev:
+            return False
+    else:
+        if expectation["freq"] not in ev:
+            return False
+
+    # Width is not present in AP-CSA-FINISHED
+    if "AP-CSA-FINISHED" in ev:
+        return True
+
+    if expectation["width"]:
+        if expectation["width"] not in ev:
+            return False
+
+    return True
+
+def he_6ghz_incumbt_sig_intf(dev, apdev, ch_params, bitmap, expectation):
+    check_sae_capab(dev[0])
+    csa_supported(dev[0])
+
+    try:
+        hapd = None
+        params = {"ssid": "he_incumbt_sig_intf",
+                  "country_code": "DE",
+                  "op_class": "131",
+                  "ieee80211ax": "1",
+                  "wpa": "2",
+                  "rsn_pairwise": "CCMP",
+                  "wpa_key_mgmt": "SAE",
+                  "sae_pwe": "1",
+                  "sae_password": "password",
+                  "ieee80211w": "2"}
+        params.update(ch_params)
+
+        hapd = hostapd.add_ap(apdev[0], params, set_channel=False)
+        bssid = apdev[0]['bssid']
+
+        dev[0].set("sae_pwe", "1")
+        dev[0].set("sae_groups", "")
+        dev[0].connect("he_incumbt_sig_intf", sae_password="password",
+                       key_mgmt="SAE", ieee80211w="2", scan_freq="6195")
+        hapd.wait_sta()
+        he_verify_wifi_version(dev[0])
+        hwsim_utils.test_connectivity(dev[0], hapd)
+
+        status = hapd.get_status()
+        logger.info("hostapd STATUS: " + str(status))
+        if status["ieee80211ax"] != "1":
+            raise Exception("Unexpected STATUS ieee80211ax value")
+        if status["he_oper_chwidth"] != "0":
+            raise Exception("Unexpected STATUS he_oper_chwidth value")
+
+        sta = hapd.get_sta(dev[0].own_addr())
+        logger.info("hostapd STA: " + str(sta))
+        if "[HE]" not in sta['flags']:
+            raise Exception("Missing STA flag: HE")
+
+        # Simulate incumbent signal interference with a bitmap
+        simulate_incumbt_sig_intf(hapd, bitmap)
+
+        ev = hapd.wait_event(["CTRL-EVENT-STARTED-CHANNEL-SWITCH"], timeout=10)
+        if ev is None:
+            raise Exception("Channel switch start event not seen")
+        if not expected_values_in_ev(ev, expectation):
+            raise Exception("Unexpected channel in CS started")
+
+        ev = hapd.wait_event(["CTRL-EVENT-CHANNEL-SWITCH"], timeout=10)
+        if ev is None:
+            raise Exception("Channel switch completion event not seen")
+        if not expected_values_in_ev(ev, expectation):
+            raise Exception("Unexpected channel in CS completed")
+
+        ev = hapd.wait_event(["AP-CSA-FINISHED"], timeout=10)
+        if ev is None:
+            raise Exception("CSA finished event timed out")
+        if not expected_values_in_ev(ev, expectation):
+            raise Exception("Unexpected channel in CSA finished event")
+
+        time.sleep(0.5)
+        hwsim_utils.test_connectivity(dev[0], hapd)
+    except Exception as e:
+        if isinstance(e, Exception) and str(e) == "AP startup failed":
+            if not he_supported():
+                raise HwsimSkip("HE 6 GHz channel not supported in regulatory information")
+        raise
+    finally:
+        dev[0].request("DISCONNECT")
+        dev[0].set("sae_pwe", "0")
+        dev[0].wait_disconnected()
+        clear_regdom(hapd, dev)
+
+def he_6ghz_incumbt_sig_intf_bw_reduction(dev, apdev, ch_params, bitmap,
+                                          expectation):
+    """Helper for bandwidth reduction (non-CSA) path of incumbent signal
+    interference handling. When interference is detected only in secondary
+    channels, hostapd reduces the operating bandwidth in-place without a
+    channel switch announcement (CSA). This helper verifies the bandwidth
+    reduction by polling the AP status after triggering the event."""
+    try:
+        hapd = None
+        params = {"ssid": "he_incumbt_sig_intf",
+                  "country_code": "DE",
+                  "op_class": "131",
+                  "ieee80211ax": "1",
+                  "wpa": "2",
+                  "rsn_pairwise": "CCMP",
+                  "wpa_key_mgmt": "SAE",
+                  "sae_pwe": "1",
+                  "sae_password": "password",
+                  "ieee80211w": "2"}
+        params.update(ch_params)
+
+        hapd = hostapd.add_ap(apdev[0], params, set_channel=False)
+        bssid = apdev[0]['bssid']
+
+        dev[0].set("sae_pwe", "1")
+        dev[0].set("sae_groups", "")
+        dev[0].connect("he_incumbt_sig_intf", sae_password="password",
+                       key_mgmt="SAE", ieee80211w="2", scan_freq="6195")
+        hapd.wait_sta()
+        he_verify_wifi_version(dev[0])
+        hwsim_utils.test_connectivity(dev[0], hapd)
+
+        status = hapd.get_status()
+        logger.info("hostapd STATUS: " + str(status))
+        if status["ieee80211ax"] != "1":
+            raise Exception("Unexpected STATUS ieee80211ax value")
+        if status["he_oper_chwidth"] != "0":
+            raise Exception("Unexpected STATUS he_oper_chwidth value")
+
+        sta = hapd.get_sta(dev[0].own_addr())
+        logger.info("hostapd STA: " + str(sta))
+        if "[HE]" not in sta['flags']:
+            raise Exception("Missing STA flag: HE")
+
+        # Simulate incumbent signal interference with a bitmap
+        simulate_incumbt_sig_intf(hapd, bitmap)
+
+        # Bandwidth reduction is applied in-place (no CSA). Poll status to
+        # confirm the primary frequency is unchanged and the operating
+        # bandwidth has been reduced as expected.
+        time.sleep(1)
+        status = hapd.get_status()
+        logger.info("hostapd STATUS after BW reduction: " + str(status))
+
+        if expectation["freq"] and \
+                expectation["freq"] != status.get("freq", ""):
+            raise Exception("Unexpected freq after BW reduction: " +
+                            status.get("freq", "N/A"))
+
+        if expectation["he_oper_chwidth"] is not None and \
+                status.get("he_oper_chwidth") != expectation["he_oper_chwidth"]:
+            raise Exception("Unexpected he_oper_chwidth after BW reduction: " +
+                            status.get("he_oper_chwidth", "N/A") +
+                            " (expected " + expectation["he_oper_chwidth"] + ")")
+
+        if expectation["he_oper_centr_freq_seg0_idx"] is not None and \
+                status.get("he_oper_centr_freq_seg0_idx") != \
+                expectation["he_oper_centr_freq_seg0_idx"]:
+            raise Exception(
+                "Unexpected he_oper_centr_freq_seg0_idx after BW reduction: " +
+                status.get("he_oper_centr_freq_seg0_idx", "N/A") +
+                " (expected " + expectation["he_oper_centr_freq_seg0_idx"] + ")")
+    except Exception as e:
+        if isinstance(e, Exception) and str(e) == "AP startup failed":
+            if not he_supported():
+                raise HwsimSkip("HE 6 GHz channel not supported in regulatory information")
+        raise
+    finally:
+        dev[0].request("DISCONNECT")
+        dev[0].set("sae_pwe", "0")
+        dev[0].wait_disconnected()
+        clear_regdom(hapd, dev)
+
+def test_he_6ghz_incumbt_sig_pri20(dev, apdev):
+    """6 GHz AP with incumbent signal interference in primary 20 MHz channel"""
+    # Possible bitmaps - '0x1'
+    bitmap = '0x1'
+    # Primary channel should change. Bandwidth depends on availability.
+    expectation = {"freq" : None,
+                   "width" : None}
+
+    params = {"channel" : "49"}
+
+    # Original operating bandwidth is 20 MHz
+    params["he_oper_chwidth"] = "0"
+    params["he_oper_centr_freq_seg0_idx"] = "49"
+    he_6ghz_incumbt_sig_intf(dev, apdev, params, bitmap, expectation)
+
+    # Original operating bandwidth is 40 MHz
+    params["he_oper_chwidth"] = "1"
+    params["he_oper_centr_freq_seg0_idx"] = "51"
+    he_6ghz_incumbt_sig_intf(dev, apdev, params, bitmap, expectation)
+
+    # Original operating bandwidth is 80 MHz
+    params["he_oper_chwidth"] = "2"
+    params["he_oper_centr_freq_seg0_idx"] = "55"
+    he_6ghz_incumbt_sig_intf(dev, apdev, params, bitmap, expectation)
+
+def test_he_6ghz_incumbt_sig_intf_sec20(dev, apdev):
+    """6 GHz AP with incumbent signal interference in secondary 20 MHz channel"""
+    # Possible bitmaps - '0x2'
+    # For secondary 20, original bandwidth should be equal or greater than
+    # 40 MHz.
+
+    # Primary channel should remain same. Bandwidth should reduce to 20 MHz.
+    # Bandwidth reduction is done in-place without CSA.
+    expectation = {"freq" : "6195",
+                   "he_oper_chwidth" : "0",
+                   "he_oper_centr_freq_seg0_idx" : "49"}
+
+    params = {"channel" : "49"}
+
+    # Original operating bandwidth is 40 MHz
+    params["he_oper_chwidth"] = "1"
+    params["he_oper_centr_freq_seg0_idx"] = "51"
+    he_6ghz_incumbt_sig_intf_bw_reduction(dev, apdev, params, '0x2',
+                                          expectation)
+
+    # Original operating bandwidth is 80 MHz
+    params["he_oper_chwidth"] = "2"
+    params["he_oper_centr_freq_seg0_idx"] = "55"
+    he_6ghz_incumbt_sig_intf_bw_reduction(dev, apdev, params, '0x2',
+                                          expectation)
+
+def test_he_6ghz_incumbt_sig_intf_sec40(dev, apdev):
+    """6 GHz AP with incumbent signal interference in secondary 40 MHz channel"""
+    # Possible bitmaps - '0x4', '0x8', '0xC'
+    # For secondary 40, original bandwidth should be equal or greater than
+    # 80 MHz
+    # Primary channel should remain same. Bandwidth should reduce to 40 MHz.
+    # Bandwidth reduction is done in-place without CSA.
+    expectation = {"freq" : "6195",
+                   "he_oper_chwidth" : "0",
+                   "he_oper_centr_freq_seg0_idx" : "51"}
+
+    params = {"channel" : "49"}
+
+    # Original operating bandwidth is 80 MHz
+    params["he_oper_chwidth"] = "2"
+    params["he_oper_centr_freq_seg0_idx"] = "55"
+
+    he_6ghz_incumbt_sig_intf_bw_reduction(dev, apdev, params, '0x4',
+                                          expectation)
+    he_6ghz_incumbt_sig_intf_bw_reduction(dev, apdev, params, '0x8',
+                                          expectation)
+    he_6ghz_incumbt_sig_intf_bw_reduction(dev, apdev, params, '0xC',
+                                          expectation)

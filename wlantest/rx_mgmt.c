@@ -156,14 +156,13 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		eml = WPA_GET_LE16(pos);
 		pos += 2;
 		wpa_printf(MSG_DEBUG,
-			   "EML Capabilities: 0x%x (EMLSR=%u EMLSR_Padding_Delay=%u EMLSR_Transition_Delay=%u EMLMR=%u EMLMR_Delay=%u Transition_Timeout=%u Reserved=%u)",
+			   "EML Capabilities: 0x%x (EMLSR=%u EMLSR_Padding_Delay=%u EMLSR_Transition_Delay=%u EMLMR=%u Transition_Timeout=%u Reserved=%u)",
 			   eml,
 			   !!(eml & EHT_ML_EML_CAPA_EMLSR_SUPP),
 			   (eml & EHT_ML_EML_CAPA_EMLSR_PADDING_DELAY_MASK) >>
 			   1,
 			   (eml & EHT_ML_EML_CAPA_EMLSR_TRANS_DELAY_MASK) >> 4,
 			   !!(eml & EHT_ML_EML_CAPA_EMLMR_SUPP),
-			   (eml & EHT_ML_EML_CAPA_EMLMR_DELAY_MASK) >> 8,
 			   (eml & EHT_ML_EML_CAPA_TRANSITION_TIMEOUT_MASK) >>
 			   11,
 			   !!(eml & BIT(15)));
@@ -197,6 +196,18 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		pos++;
 	}
 
+	if (ctrl & BASIC_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP) {
+		if (ci_end - pos < 2) {
+			wpa_printf(MSG_INFO,
+				   "No room for Extended MLD Capabilities And Operations in Multi-Link Common Info");
+			return;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "Extended MLD Capabilities And Operations: 0x%x",
+			   WPA_GET_LE16(pos));
+		pos += 2;
+	}
+
 	if (pos < ci_end) {
 		wpa_hexdump(MSG_INFO,
 			    "Extra information at the end of Common Info",
@@ -213,10 +224,10 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		const u8 *fpos;
 		u8 flen;
 
-		if (elem->id == EHT_ML_SUB_ELEM_FRAGMENT)
+		if (elem->id == MULTI_LINK_SUB_ELEM_ID_FRAGMENT)
 			continue;
 
-		if (elem->id != EHT_ML_SUB_ELEM_PER_STA_PROFILE) {
+		if (elem->id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
 			wpa_printf(MSG_DEBUG, "Link Info subelement id=%u",
 				   elem->id);
 			wpa_hexdump(MSG_DEBUG, "Link Info subelement data",
@@ -231,7 +242,7 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		flen = elem->datalen;
 		fpos = elem->data + flen;
 		while (flen == 255 && li_end - fpos >= 2 &&
-		       *fpos == EHT_ML_SUB_ELEM_FRAGMENT &&
+		       *fpos == MULTI_LINK_SUB_ELEM_ID_FRAGMENT &&
 		       li_end - fpos >= 2 + fpos[1]) {
 			/* Reassemble truncated subelement */
 			fpos++;
@@ -358,7 +369,7 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		if (info_end > pos) {
 			wpa_hexdump(MSG_INFO,
 				    "Extra information at the end of STA Info",
-				    pos, ci_end - pos);
+				    pos, info_end - pos);
 			pos = info_end;
 		}
 
@@ -399,6 +410,280 @@ static void parse_basic_ml_elems(struct ieee802_11_elems *elems, bool ap,
 }
 
 
+static void parse_reconfig_ml(const u8 *ie, size_t len,
+			      struct wlantest_sta *sta)
+{
+	const u8 *pos, *end, *ci_end, *info_end, *li_end;
+	u16 ctrl, eml, cap, bitmap;
+	const struct element *elem;
+	struct wpabuf *profile = NULL;
+	size_t fields_len = 2;
+
+	wpa_hexdump(MSG_MSGDUMP, "Reconfiguration MLE", ie, len);
+	pos = ie;
+	end = ie + len;
+
+	if (end - pos < 2)
+		return;
+	ctrl = WPA_GET_LE16(pos);
+	bitmap = ctrl >> 4;
+	wpa_printf(MSG_DEBUG,
+		   "Multi-Link Control: Type=%u Reserved=%u Presence Bitmap=0x%x",
+		   ctrl & MULTI_LINK_CONTROL_TYPE_MASK,
+		   ctrl & BIT(3),
+		   bitmap);
+	pos += 2;
+
+	/* Common Info */
+
+	if (end - pos < 1)
+		return;
+	len = *pos;
+	if (len > end - pos) {
+		wpa_printf(MSG_INFO,
+			   "Truncated Multi-Link Common Info (len=%zu left=%zu)",
+			   len, (size_t) (end - pos));
+		return;
+	}
+	if (len < 1) {
+		wpa_printf(MSG_INFO, "Too short Multi-Link Common Info");
+		return;
+	}
+	ci_end = pos + len;
+
+	pos++;
+	wpa_hexdump(MSG_MSGDUMP, "Reconfiguration MLE - Common Info",
+		    pos, ci_end - pos);
+
+	if (bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_MAC_ADDR) {
+		if (ci_end - pos < ETH_ALEN) {
+			wpa_printf(MSG_INFO,
+				   "No room for MLD MAC Address in Multi-Link Common Info");
+			return;
+		}
+		wpa_printf(MSG_DEBUG, "MLD MAC Address: " MACSTR, MAC2STR(pos));
+		if (sta && is_zero_ether_addr(sta->mld_mac_addr)) {
+			os_memcpy(sta->mld_mac_addr, pos, ETH_ALEN);
+			wpa_printf(MSG_DEBUG,
+				   "Learned non-AP STA MLD MAC Address from Reconfig MLE: "
+				   MACSTR, MAC2STR(sta->mld_mac_addr));
+		}
+		pos += ETH_ALEN;
+	}
+
+	if (bitmap & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA) {
+		if (ci_end - pos < 2) {
+			wpa_printf(MSG_INFO,
+				   "No room for EML Capabilities in Multi-Link Common Info");
+			return;
+		}
+		eml = WPA_GET_LE16(pos);
+		pos += 2;
+		wpa_printf(MSG_DEBUG,
+			   "EML Capabilities: 0x%x (EMLSR=%u EMLSR_Padding_Delay=%u EMLSR_Transition_Delay=%u EMLMR=%u Transition_Timeout=%u Reserved=%u)",
+			   eml,
+			   !!(eml & EHT_ML_EML_CAPA_EMLSR_SUPP),
+			   (eml & EHT_ML_EML_CAPA_EMLSR_PADDING_DELAY_MASK) >>
+			   1,
+			   (eml & EHT_ML_EML_CAPA_EMLSR_TRANS_DELAY_MASK) >> 4,
+			   !!(eml & EHT_ML_EML_CAPA_EMLMR_SUPP),
+			   (eml & EHT_ML_EML_CAPA_TRANSITION_TIMEOUT_MASK) >>
+			   11,
+			   !!(eml & BIT(15)));
+	}
+
+	if (bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA) {
+		if (ci_end - pos < 2) {
+			wpa_printf(MSG_INFO,
+				   "No room for MLD Capabilities and Operations in Multi-Link Common Info");
+			return;
+		}
+		cap = WPA_GET_LE16(pos);
+		pos += 2;
+		wpa_printf(MSG_DEBUG,
+			   "MLD Capabilities and Operations: 0x%x (Max_Simultaneous_Links=%u SRS=%u T2L=0x%x Freq_Sep_STR=0x%x AAR=%u Reserved=0x%x)",
+			   cap,
+			   cap & EHT_ML_MLD_CAPA_MAX_NUM_SIM_LINKS_MASK,
+			   !!(cap & EHT_ML_MLD_CAPA_SRS_SUPP),
+			   (cap &
+			    EHT_ML_MLD_CAPA_TID_TO_LINK_MAP_NEG_SUPP_MSK) >> 5,
+			   (cap & EHT_ML_MLD_CAPA_FREQ_SEP_FOR_STR_MASK) >> 7,
+			   !!(cap & EHT_ML_MLD_CAPA_AAR_SUPP),
+			   (cap & 0xe000) >> 13);
+	}
+
+	if (bitmap & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP) {
+		if (ci_end - pos < 2) {
+			wpa_printf(MSG_INFO,
+				   "No room for Extended MLD Capabilities And Operations in Multi-Link Common Info");
+			return;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "Extended MLD Capabilities And Operations: 0x%x",
+			   WPA_GET_LE16(pos));
+		pos += 2;
+	}
+
+	if (pos < ci_end) {
+		wpa_hexdump(MSG_INFO,
+			    "Extra information at the end of Common Info",
+			    pos, ci_end - pos);
+		pos = ci_end;
+	}
+
+	/* Link Info */
+	wpa_hexdump(MSG_MSGDUMP, "Reconfiguration MLE - Link Info",
+		    pos, end - pos);
+
+	li_end = end;
+	for_each_element(elem, pos, li_end - pos) {
+		u8 link_id;
+		const u8 *fpos;
+		u8 flen;
+
+		if (elem->id == MULTI_LINK_SUB_ELEM_ID_FRAGMENT)
+			continue;
+
+		if (elem->id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
+			wpa_printf(MSG_DEBUG, "Link Info subelement id=%u",
+				   elem->id);
+			wpa_hexdump(MSG_DEBUG, "Link Info subelement data",
+				    elem->data, elem->datalen);
+			continue;
+		}
+
+		wpabuf_free(profile);
+		profile = wpabuf_alloc_copy(elem->data, elem->datalen);
+		if (!profile)
+			continue;
+		flen = elem->datalen;
+		fpos = elem->data + flen;
+		while (flen == 255 && li_end - fpos >= 2 &&
+		       *fpos == MULTI_LINK_SUB_ELEM_ID_FRAGMENT &&
+		       li_end - fpos >= 2 + fpos[1]) {
+			/* Reassemble truncated subelement */
+			fpos++;
+			flen = *fpos++;
+			if (wpabuf_resize(&profile, flen) < 0)
+				continue;
+			wpabuf_put_data(profile, fpos, flen);
+			fpos += flen;
+		}
+		pos = wpabuf_head(profile);
+		end = pos + wpabuf_len(profile);
+
+		if (end - pos < 2) {
+			wpa_printf(MSG_INFO,
+				   "Truncated Per-STA Profile subelement");
+			continue;
+		}
+		wpa_hexdump(MSG_MSGDUMP,
+			    "Reconfiguration MLE - Per-STA Profile",
+			    pos, end - pos);
+		ctrl = WPA_GET_LE16(pos);
+		pos += 2;
+
+		link_id = ctrl & EHT_PER_STA_RECONF_CTRL_LINK_ID_MSK;
+		wpa_printf(MSG_DEBUG, "Per-STA Profile: len=%zu Link_ID=%u Complete=%u Reserved=0x%x",
+			   wpabuf_len(profile),
+			   link_id,
+			   !!(ctrl & EHT_PER_STA_RECONF_CTRL_COMPLETE_PROFILE),
+			   (ctrl & 0xc000) >> 14);
+
+		if (end - pos < 1) {
+			wpa_printf(MSG_INFO, "No room for STA Info field");
+			continue;
+		}
+		len = *pos;
+		if (len < 1 || len > end - pos) {
+			wpa_printf(MSG_INFO, "Truncated STA Info field");
+			continue;
+		}
+		info_end = pos + len;
+		pos++;
+
+		if (ctrl & EHT_PER_STA_RECONF_CTRL_MAC_ADDR) {
+			if (info_end - pos < ETH_ALEN) {
+				wpa_printf(MSG_INFO,
+					   "Truncated STA MAC Address in STA Info");
+				continue;
+			}
+			wpa_printf(MSG_DEBUG, "STA MAC Address: " MACSTR,
+				   MAC2STR(pos));
+			if (sta && link_id < MAX_NUM_MLD_LINKS) {
+				os_memcpy(sta->link_addr[link_id], pos,
+					  ETH_ALEN);
+				wpa_printf(MSG_DEBUG,
+					   "Learned Link ID %u MAC address "
+					   MACSTR
+					   " from Link Reconfiguration Request",
+					   link_id, MAC2STR(pos));
+			}
+			pos += ETH_ALEN;
+		}
+
+		if (ctrl & EHT_PER_STA_RECONF_CTRL_AP_REMOVAL_TIMER) {
+			if (info_end - pos < 2) {
+				wpa_printf(MSG_INFO,
+					   "Truncated AP Removal Timer in STA Info");
+				continue;
+			}
+			pos += 2;
+		}
+
+		if (ctrl & EHT_PER_STA_RECONF_CTRL_OP_PARAMS) {
+			if (info_end - pos < 3) {
+				wpa_printf(MSG_INFO,
+					   "Truncated Operation Parameters in STA Info");
+				continue;
+			}
+			pos += 3;
+		}
+
+		if (info_end > pos) {
+			wpa_hexdump(MSG_INFO,
+				    "Extra information at the end of STA Info",
+				    pos, info_end - pos);
+			pos = info_end;
+		}
+
+		wpa_hexdump(MSG_DEBUG, "STA Profile", pos, end - pos);
+		if (end - pos > fields_len) {
+			struct ieee802_11_elems elems;
+
+			if (ieee802_11_parse_elems(pos + fields_len,
+						   end - pos - fields_len,
+						   &elems, 0) != ParseFailed) {
+				if (elems.rsn_ie)
+					wpa_hexdump(MSG_DEBUG, "RSNE",
+						    elems.rsn_ie,
+						    elems.rsn_ie_len);
+				if (elems.rsnxe)
+					wpa_hexdump(MSG_DEBUG, "RSNXE",
+						    elems.rsnxe,
+						    elems.rsnxe_len);
+			}
+		}
+	}
+
+	wpabuf_free(profile);
+}
+
+
+static void parse_reconfig_ml_elems(struct ieee802_11_elems *elems,
+				    struct wlantest_sta *sta)
+{
+	struct wpabuf *mlbuf;
+
+	mlbuf = ieee802_11_defrag(elems->reconf_mle, elems->reconf_mle_len,
+				  true);
+	if (mlbuf) {
+		parse_reconfig_ml(wpabuf_head(mlbuf), wpabuf_len(mlbuf), sta);
+		wpabuf_free(mlbuf);
+	}
+}
+
+
 static void rx_mgmt_beacon(struct wlantest *wt, const u8 *data, size_t len)
 {
 	const struct ieee80211_mgmt *mgmt;
@@ -408,6 +693,7 @@ static void rx_mgmt_beacon(struct wlantest *wt, const u8 *data, size_t len)
 	const u8 *mme;
 	size_t mic_len;
 	u16 keyid;
+	u64 rx_bipn;
 
 	mgmt = (const struct ieee80211_mgmt *) data;
 	offset = mgmt->u.beacon.variable - data;
@@ -600,8 +886,11 @@ static void rx_mgmt_beacon(struct wlantest *wt, const u8 *data, size_t len)
 		return;
 	}
 
-	wpa_printf(MSG_DEBUG, "Beacon frame MME KeyID %u", keyid);
-	wpa_hexdump(MSG_MSGDUMP, "MME IPN", mme + 2, 6);
+	rx_bipn = WPA_GET_LE48(mme + 2);
+	wpa_printf(MSG_DEBUG, "Beacon frame BSSID " MACSTR
+		   " MME KeyID %u BIPN 0x%llx",
+		   MAC2STR(mgmt->bssid), keyid,
+		   (long long unsigned int) rx_bipn);
 	wpa_hexdump(MSG_MSGDUMP, "MME MIC", mme + 8, mic_len);
 
 	if (!bss->igtk_len[keyid]) {
@@ -611,11 +900,11 @@ static void rx_mgmt_beacon(struct wlantest *wt, const u8 *data, size_t len)
 		return;
 	}
 
-	if (os_memcmp(mme + 2, bss->ipn[keyid], 6) <= 0) {
-		add_note(wt, MSG_INFO, "BIP replay detected: SA=" MACSTR,
-			 MAC2STR(mgmt->sa));
-		wpa_hexdump(MSG_INFO, "RX IPN", mme + 2, 6);
-		wpa_hexdump(MSG_INFO, "Last RX IPN", bss->ipn[keyid], 6);
+	if (rx_bipn <= bss->ipn[keyid]) {
+		add_note(wt, MSG_INFO, "BIP replay detected: SA=" MACSTR
+			 " RX BIPN 0x%llx <= 0x%llx",
+			 MAC2STR(mgmt->sa), (long long unsigned int) rx_bipn,
+			 (long long unsigned int) bss->ipn[keyid]);
 	}
 
 	if (check_mmie_mic(bss->mgmt_group_cipher, bss->igtk[keyid],
@@ -627,7 +916,7 @@ static void rx_mgmt_beacon(struct wlantest *wt, const u8 *data, size_t len)
 	}
 
 	add_note(wt, MSG_DEBUG, "Valid MME MIC in Beacon frame");
-	os_memcpy(bss->ipn[keyid], mme + 2, 6);
+	bss->ipn[keyid] = rx_bipn;
 }
 
 
@@ -698,16 +987,16 @@ static void process_fils_auth(struct wlantest *wt, struct wlantest_bss *bss,
 		sta->pairwise_cipher = data.pairwise_cipher;
 	}
 
-	if (!elems.fils_nonce) {
+	if (!elems.nonce) {
 		add_note(wt, MSG_INFO,
 			 "FILS Authentication frame missing nonce");
 		return;
 	}
 
 	if (ether_addr_equal(mgmt->sa, mgmt->bssid))
-		os_memcpy(sta->anonce, elems.fils_nonce, FILS_NONCE_LEN);
+		os_memcpy(sta->anonce, elems.nonce, NONCE_LEN);
 	else
-		os_memcpy(sta->snonce, elems.fils_nonce, FILS_NONCE_LEN);
+		os_memcpy(sta->snonce, elems.nonce, NONCE_LEN);
 }
 
 
@@ -724,7 +1013,7 @@ static void process_ft_auth(struct wlantest *wt, struct wlantest_bss *bss,
 	const u8 *spa, *aa;
 	struct ieee802_11_elems elems;
 	const u8 *ie;
-	size_t ie_len;
+	size_t ie_len, kdk_len;
 	const u8 *rsnxe;
 	size_t rsnxe_len;
 
@@ -753,6 +1042,12 @@ static void process_ft_auth(struct wlantest *wt, struct wlantest_bss *bss,
 		sta->pairwise_cipher = parse.pairwise_cipher;
 		if (parse.fte_snonce)
 			os_memcpy(sta->snonce, parse.fte_snonce, WPA_NONCE_LEN);
+		if (elems.rsnxe) {
+			os_memcpy(sta->rsnxe, elems.rsnxe, elems.rsnxe_len);
+			sta->rsnxe_len = elems.rsnxe_len;
+		} else {
+			sta->rsnxe_len = 0;
+		}
 		goto out;
 	}
 
@@ -809,12 +1104,19 @@ static void process_ft_auth(struct wlantest *wt, struct wlantest_bss *bss,
 		rsnxe = bss->rsnxe;
 		rsnxe_len = bss->rsnxe_len;
 	}
+	if (ieee802_11_rsnx_capab_len(rsnxe, rsnxe_len,
+				      WLAN_RSNX_CAPAB_SECURE_LTF) &&
+	    ieee802_11_rsnx_capab_len(sta->rsnxe, sta->rsnxe_len,
+				      WLAN_RSNX_CAPAB_SECURE_LTF))
+		kdk_len = WPA_KDK_MAX_LEN;
+	else
+		kdk_len = 0;
 
 	if (!parse.fte_anonce || !parse.fte_snonce ||
 	    wpa_pmk_r1_to_ptk(sta->pmk_r1, sta->pmk_r1_len, parse.fte_snonce,
 			      parse.fte_anonce, spa, aa,
 			      sta->pmk_r1_name, &ptk, ptk_name, sta->key_mgmt,
-			      sta->pairwise_cipher, 0) < 0)
+			      sta->pairwise_cipher, kdk_len) < 0)
 		goto out;
 
 	sta_new_ptk(wt, sta, &ptk);
@@ -834,7 +1136,7 @@ static void process_sae_auth(struct wlantest *wt, struct wlantest_bss *bss,
 		return;
 
 	trans = le_to_host16(mgmt->u.auth.auth_transaction);
-	if (trans != 1)
+	if (trans != WLAN_AUTH_TR_SEQ_SAE_COMMIT)
 		return;
 
 	status = le_to_host16(mgmt->u.auth.status_code);
@@ -886,7 +1188,8 @@ static void rx_mgmt_auth(struct wlantest *wt, const u8 *data, size_t len)
 
 	if (status == WLAN_STATUS_SUCCESS &&
 	    ((alg == WLAN_AUTH_OPEN && trans == 2) ||
-	     (alg == WLAN_AUTH_SAE && trans == 2 && from_ap))) {
+	     (alg == WLAN_AUTH_SAE && trans == WLAN_AUTH_TR_SEQ_SAE_CONFIRM &&
+	      from_ap))) {
 		if (sta->state == STATE1) {
 			add_note(wt, MSG_DEBUG, "STA " MACSTR
 				 " moved to State 2 with " MACSTR,
@@ -980,9 +1283,9 @@ static void rx_mgmt_deauth(struct wlantest *wt, const u8 *data, size_t len,
 			sta->counters[WLANTEST_STA_COUNTER_DEAUTH_RX_AWAKE]++;
 
 		fc = le_to_host16(mgmt->frame_control);
-		if (!(fc & WLAN_FC_ISWEP) && reason == 6)
+		if (!(fc & WLAN_FC_PROTECTED) && reason == 6)
 			sta->counters[WLANTEST_STA_COUNTER_DEAUTH_RX_RC6]++;
-		else if (!(fc & WLAN_FC_ISWEP) && reason == 7)
+		else if (!(fc & WLAN_FC_PROTECTED) && reason == 7)
 			sta->counters[WLANTEST_STA_COUNTER_DEAUTH_RX_RC7]++;
 	} else
 		sta->counters[valid ? WLANTEST_STA_COUNTER_VALID_DEAUTH_TX :
@@ -1062,10 +1365,10 @@ static int try_rmsk(struct wlantest *wt, struct wlantest_bss *bss,
 	aad_len[1] = ETH_ALEN;
 	/* The STA's nonce */
 	aad[2] = sta->snonce;
-	aad_len[2] = FILS_NONCE_LEN;
+	aad_len[2] = NONCE_LEN;
 	/* The AP's nonce */
 	aad[3] = sta->anonce;
-	aad_len[3] = FILS_NONCE_LEN;
+	aad_len[3] = NONCE_LEN;
 	/*
 	 * The (Re)Association Request frame from the Capability Information
 	 * field to the FILS Session element (both inclusive).
@@ -1283,10 +1586,10 @@ static void decrypt_fils_assoc_resp(struct wlantest *wt,
 	aad_len[1] = ETH_ALEN;
 	/* The AP's nonce */
 	aad[2] = sta->anonce;
-	aad_len[2] = FILS_NONCE_LEN;
+	aad_len[2] = NONCE_LEN;
 	/* The STA's nonce */
 	aad[3] = sta->snonce;
-	aad_len[3] = FILS_NONCE_LEN;
+	aad_len[3] = NONCE_LEN;
 	/*
 	 * The (Re)Association Response frame from the Capability Information
 	 * field to the FILS Session element (both inclusive).
@@ -1936,12 +2239,7 @@ static void process_igtk_subelem(struct wlantest *wt, struct wlantest_bss *bss,
 	os_memcpy(bss->igtk[keyidx], igtk, igtk_len);
 	bss->igtk_len[keyidx] = igtk_len;
 	ipn = igtk_elem + 2;
-	bss->ipn[keyidx][0] = ipn[5];
-	bss->ipn[keyidx][1] = ipn[4];
-	bss->ipn[keyidx][2] = ipn[3];
-	bss->ipn[keyidx][3] = ipn[2];
-	bss->ipn[keyidx][4] = ipn[1];
-	bss->ipn[keyidx][5] = ipn[0];
+	bss->ipn[keyidx] = WPA_GET_LE48(ipn);
 	bss->igtk_idx = keyidx;
 }
 
@@ -2008,12 +2306,7 @@ static void process_bigtk_subelem(struct wlantest *wt, struct wlantest_bss *bss,
 	os_memcpy(bss->igtk[keyidx], bigtk, bigtk_len);
 	bss->igtk_len[keyidx] = bigtk_len;
 	ipn = bigtk_elem + 2;
-	bss->ipn[keyidx][0] = ipn[5];
-	bss->ipn[keyidx][1] = ipn[4];
-	bss->ipn[keyidx][2] = ipn[3];
-	bss->ipn[keyidx][3] = ipn[2];
-	bss->ipn[keyidx][4] = ipn[1];
-	bss->ipn[keyidx][5] = ipn[0];
+	bss->ipn[keyidx] = WPA_GET_LE48(ipn);
 	bss->bigtk_idx = keyidx;
 }
 
@@ -2563,9 +2856,9 @@ static void rx_mgmt_disassoc(struct wlantest *wt, const u8 *data, size_t len,
 				WLANTEST_STA_COUNTER_DISASSOC_RX_AWAKE]++;
 
 		fc = le_to_host16(mgmt->frame_control);
-		if (!(fc & WLAN_FC_ISWEP) && reason == 6)
+		if (!(fc & WLAN_FC_PROTECTED) && reason == 6)
 			sta->counters[WLANTEST_STA_COUNTER_DISASSOC_RX_RC6]++;
-		else if (!(fc & WLAN_FC_ISWEP) && reason == 7)
+		else if (!(fc & WLAN_FC_PROTECTED) && reason == 7)
 			sta->counters[WLANTEST_STA_COUNTER_DISASSOC_RX_RC7]++;
 	} else
 		sta->counters[valid ? WLANTEST_STA_COUNTER_VALID_DISASSOC_TX :
@@ -2646,6 +2939,13 @@ static void rx_mgmt_action_ft_request(struct wlantest *wt,
 	sta->ft_over_ds = true;
 	sta->key_mgmt = parse.key_mgmt;
 	sta->pairwise_cipher = parse.pairwise_cipher;
+	if (parse.rsnxe) {
+		os_memcpy(sta->rsnxe, parse.rsnxe, parse.rsnxe_len);
+		sta->rsnxe_len = parse.rsnxe_len;
+	} else {
+		sta->rsnxe_len = 0;
+	}
+
 out:
 	wpa_ft_parse_ies_free(&parse);
 }
@@ -2660,7 +2960,7 @@ static void rx_mgmt_action_ft_response(struct wlantest *wt,
 	struct wlantest_sta *new_sta;
 	const u8 *spa, *aa;
 	const u8 *ies;
-	size_t ies_len;
+	size_t ies_len, kdk_len;
 	struct wpa_ft_ies parse;
 	struct wpa_ptk ptk;
 	u8 ptk_name[WPA_PMK_NAME_LEN];
@@ -2735,13 +3035,20 @@ static void rx_mgmt_action_ft_response(struct wlantest *wt,
 		rsnxe = bss->rsnxe;
 		rsnxe_len = bss->rsnxe_len;
 	}
+	if (ieee802_11_rsnx_capab_len(rsnxe, rsnxe_len,
+				      WLAN_RSNX_CAPAB_SECURE_LTF) &&
+	    ieee802_11_rsnx_capab_len(sta->rsnxe, sta->rsnxe_len,
+				      WLAN_RSNX_CAPAB_SECURE_LTF))
+		kdk_len = WPA_KDK_MAX_LEN;
+	else
+		kdk_len = 0;
 
 	if (!parse.fte_anonce || !parse.fte_snonce ||
 	    wpa_pmk_r1_to_ptk(sta->pmk_r1, sta->pmk_r1_len, parse.fte_snonce,
 			      parse.fte_anonce, spa, aa,
 			      sta->pmk_r1_name, &ptk, ptk_name,
 			      new_sta->key_mgmt, new_sta->pairwise_cipher,
-			      0) < 0)
+			      kdk_len) < 0)
 		goto out;
 
 	sta_new_ptk(wt, new_sta, &ptk);
@@ -2869,6 +3176,136 @@ static void rx_mgmt_action_sa_query(struct wlantest *wt,
 			 "from " MACSTR,
 			 mgmt->u.action.u.sa_query_req.action,
 			 MAC2STR(mgmt->sa));
+	}
+}
+
+
+static void rx_mgmt_action_link_reconfig_request(struct wlantest *wt,
+						 struct wlantest_sta *sta,
+						 const u8 *pos, const u8 *end)
+{
+	struct ieee802_11_elems elems;
+	const u8 *ml;
+
+	wpa_printf(MSG_DEBUG, "Link Reconfiguration Request");
+	if (end - pos < 1 + 3)
+		return;
+
+	wpa_printf(MSG_DEBUG, "Dialog token: %u", *pos);
+	pos++;
+
+	if (pos[0] != WLAN_EID_EXTENSION ||
+	    pos[1] < 1 + 2 ||
+	    2 + pos[1] > end - pos ||
+	    pos[2] != WLAN_EID_EXT_MULTI_LINK ||
+	    (WPA_GET_LE16(&pos[3]) & 0x0007) !=
+	    MULTI_LINK_CONTROL_TYPE_RECONF) {
+		wpa_printf(MSG_INFO,
+			   "No valid Reconfiguration Multi-Link element in Link Reconfiguration Request");
+		return;
+	}
+	wpa_hexdump(MSG_MSGDUMP, "Reconfiguration Multi-Link element",
+		    pos, 2 + pos[0]);
+	ml = get_ml_ie(pos, end - pos, MULTI_LINK_CONTROL_TYPE_RECONF);
+	if (ml &&
+	    ieee802_11_parse_elems(pos, end - pos, &elems, 0) != ParseFailed) {
+		parse_reconfig_ml_elems(&elems, sta);
+		dump_mld_info(wt, sta);
+	}
+}
+
+
+static void rx_mgmt_action_link_reconfig_response(struct wlantest *wt,
+						  struct wlantest_sta *sta,
+						  const u8 *pos, const u8 *end)
+{
+	u8 count;
+	struct ieee802_11_elems elems;
+	const u8 *ml;
+
+	wpa_printf(MSG_DEBUG, "Link Reconfiguration Response");
+	if (end - pos < 1 + 1)
+		return;
+
+	wpa_printf(MSG_DEBUG, "Dialog token: %u", *pos);
+	pos++;
+
+	count = *pos++;
+	if (count * 3 > end - pos) {
+		wpa_printf(MSG_INFO,
+			   "No room for %u Reconfiguration Status List duples in Link Reconfiguraiton Response",
+			   count);
+		return;
+	}
+	while (count > 0) {
+		count--;
+		wpa_printf(MSG_DEBUG, "Link ID %u - Status %u",
+			   pos[0] & 0x0f, WPA_GET_LE16(&pos[1]));
+		pos += 3;
+	}
+
+	/* Group Key Data (optional) */
+	if (end - pos > 1 + 2 + 4 &&
+	    end - pos >= 1 + pos[0] &&
+	    pos[1] == 0xdd) {
+		wpa_hexdump(MSG_MSGDUMP, "Group Key Data KDEs",
+			    pos + 1, pos[0]);
+		/* TODO: Update group keys in BSS entries */
+		pos += 1 + pos[0];
+	}
+
+	/* OCI element (optional) */
+	if (end - pos > 3 &&
+	    end - pos >= 2 + pos[1] &&
+	    pos[0] == WLAN_EID_EXTENSION &&
+	    pos[1] >= 1 &&
+	    pos[2] == WLAN_EID_EXT_OCV_OCI) {
+		wpa_hexdump(MSG_MSGDUMP, "OCI", pos, 2 + pos[1]);
+		pos += 2 + pos[1];
+	}
+
+	wpa_hexdump(MSG_MSGDUMP,
+		    "Basic Multi-Link element in Link Reconfiguration Response",
+		    pos, end - pos);
+	ml = get_ml_ie(pos, end - pos, MULTI_LINK_CONTROL_TYPE_BASIC);
+	if (ml &&
+	    ieee802_11_parse_elems(pos, end - pos, &elems, 0) != ParseFailed)
+		parse_basic_ml_elems(&elems, true, NULL, 4);
+}
+
+
+static void rx_mgmt_action_protected_eht(struct wlantest *wt,
+					 struct wlantest_sta *sta,
+					 const struct ieee80211_mgmt *mgmt,
+					 size_t len, int valid)
+{
+	const u8 *pos, *end;
+	u8 action;
+
+	if (!valid)
+		return;
+
+	pos = (const u8 *) &mgmt->u.action;
+	end = ((const u8 *) mgmt) + len;
+
+	pos++; /* category */
+	action = *pos++;
+	wpa_printf(MSG_DEBUG, "Protected EHT Action %u from " MACSTR,
+		   action, MAC2STR(mgmt->sa));
+	wpa_hexdump(MSG_DEBUG, "Protected EHT Action payload", pos, end - pos);
+
+	switch (action) {
+	case WLAN_PROT_EHT_LINK_RECONFIG_REQUEST:
+		rx_mgmt_action_link_reconfig_request(wt, sta, pos, end);
+		break;
+	case WLAN_PROT_EHT_LINK_RECONFIG_RESPONSE:
+		rx_mgmt_action_link_reconfig_response(wt, sta, pos, end);
+		break;
+	default:
+		add_note(wt, MSG_INFO,
+			 "Unknown Protected EHT Action value %u from " MACSTR,
+			 action, MAC2STR(mgmt->sa));
+		break;
 	}
 }
 
@@ -3054,6 +3491,9 @@ static void rx_mgmt_action(struct wlantest *wt, const u8 *data, size_t len,
 	case WLAN_ACTION_SA_QUERY:
 		rx_mgmt_action_sa_query(wt, sta, mgmt, len, valid);
 		break;
+	case WLAN_ACTION_PROTECTED_EHT:
+		rx_mgmt_action_protected_eht(wt, sta, mgmt, len, valid);
+		break;
 	}
 }
 
@@ -3145,6 +3585,7 @@ static int check_bip(struct wlantest *wt, const u8 *data, size_t len)
 	u16 keyid;
 	struct wlantest_bss *bss;
 	size_t mic_len;
+	u64 rx_ipn;
 
 	mgmt = (const struct ieee80211_mgmt *) data;
 	fc = le_to_host16(mgmt->frame_control);
@@ -3191,8 +3632,10 @@ static int check_bip(struct wlantest *wt, const u8 *data, size_t len)
 		bss->counters[WLANTEST_BSS_COUNTER_INVALID_BIP_MMIE]++;
 		return 0;
 	}
-	wpa_printf(MSG_DEBUG, "MMIE KeyID %u", keyid);
-	wpa_hexdump(MSG_MSGDUMP, "MMIE IPN", mmie + 2, 6);
+
+	rx_ipn = WPA_GET_LE48(mmie + 2);
+	wpa_printf(MSG_DEBUG, "MME KeyID %u IPN 0x%llx", keyid,
+		   (long long unsigned int) rx_ipn);
 	wpa_hexdump(MSG_MSGDUMP, "MMIE MIC", mmie + 8, mic_len);
 
 	if (!bss->igtk_len[keyid]) {
@@ -3200,11 +3643,11 @@ static int check_bip(struct wlantest *wt, const u8 *data, size_t len)
 		return 0;
 	}
 
-	if (os_memcmp(mmie + 2, bss->ipn[keyid], 6) <= 0) {
-		add_note(wt, MSG_INFO, "BIP replay detected: SA=" MACSTR,
-			 MAC2STR(mgmt->sa));
-		wpa_hexdump(MSG_INFO, "RX IPN", mmie + 2, 6);
-		wpa_hexdump(MSG_INFO, "Last RX IPN", bss->ipn[keyid], 6);
+	if (rx_ipn <= bss->ipn[keyid]) {
+		add_note(wt, MSG_INFO, "BIP replay detected: SA=" MACSTR
+			 " RX IPN 0x%llx <= 0x%llx",
+			 MAC2STR(mgmt->sa), (long long unsigned int) rx_ipn,
+			 (long long unsigned int) bss->ipn[keyid]);
 	}
 
 	if (check_mmie_mic(bss->mgmt_group_cipher, bss->igtk[keyid],
@@ -3216,7 +3659,7 @@ static int check_bip(struct wlantest *wt, const u8 *data, size_t len)
 	}
 
 	add_note(wt, MSG_DEBUG, "Valid MMIE MIC");
-	os_memcpy(bss->ipn[keyid], mmie + 2, 6);
+	bss->ipn[keyid] = rx_ipn;
 	bss->counters[WLANTEST_BSS_COUNTER_VALID_BIP_MMIE]++;
 
 	if (stype == WLAN_FC_STYPE_DEAUTH)
@@ -3506,17 +3949,22 @@ void rx_mgmt(struct wlantest *wt, const u8 *data, size_t len)
 		    stype == WLAN_FC_STYPE_PROBE_RESP ||
 		    stype == WLAN_FC_STYPE_PROBE_REQ) ?
 		   MSG_EXCESSIVE : MSG_MSGDUMP,
-		   "MGMT %s%s%s DA=" MACSTR " SA=" MACSTR " BSSID=" MACSTR,
+		   "MGMT %s%s%s DA=" MACSTR " SA=" MACSTR " BSSID=" MACSTR
+		   " #%u",
 		   mgmt_stype(stype),
 		   fc & WLAN_FC_PWRMGT ? " PwrMgt" : "",
-		   fc & WLAN_FC_ISWEP ? " Prot" : "",
+		   fc & WLAN_FC_PROTECTED ? " Prot" : "",
 		   MAC2STR(hdr->addr1), MAC2STR(hdr->addr2),
-		   MAC2STR(hdr->addr3));
+		   MAC2STR(hdr->addr3), wt->frame_num);
 
-	if ((fc & WLAN_FC_ISWEP) &&
+	if ((fc & WLAN_FC_PROTECTED) &&
 	    !(hdr->addr1[0] & 0x01) &&
 	    (stype == WLAN_FC_STYPE_DEAUTH ||
 	     stype == WLAN_FC_STYPE_DISASSOC ||
+	     stype == WLAN_FC_STYPE_ASSOC_REQ ||
+	     stype == WLAN_FC_STYPE_ASSOC_RESP ||
+	     stype == WLAN_FC_STYPE_REASSOC_REQ ||
+	     stype == WLAN_FC_STYPE_REASSOC_RESP ||
 	     stype == WLAN_FC_STYPE_ACTION ||
 	     stype == WLAN_FC_STYPE_ACTION_NO_ACK)) {
 		decrypted = mgmt_decrypt(wt, data, len, &dlen);
@@ -3528,10 +3976,14 @@ void rx_mgmt(struct wlantest *wt, const u8 *data, size_t len)
 			valid = 0;
 	}
 
-	if (!(fc & WLAN_FC_ISWEP) &&
+	if (!(fc & WLAN_FC_PROTECTED) &&
 	    !(hdr->addr1[0] & 0x01) &&
 	    (stype == WLAN_FC_STYPE_DEAUTH ||
 	     stype == WLAN_FC_STYPE_DISASSOC ||
+	     stype == WLAN_FC_STYPE_ASSOC_REQ ||
+	     stype == WLAN_FC_STYPE_ASSOC_RESP ||
+	     stype == WLAN_FC_STYPE_REASSOC_REQ ||
+	     stype == WLAN_FC_STYPE_REASSOC_RESP ||
 	     stype == WLAN_FC_STYPE_ACTION ||
 	     stype == WLAN_FC_STYPE_ACTION_NO_ACK)) {
 		if (check_mgmt_ccmp_gcmp(wt, data, len) < 0)
