@@ -296,6 +296,10 @@ static void p2p_listen_in_find(struct p2p_data *p2p, int dev_disc)
 	p2p->pending_listen_sec = 0;
 	p2p->pending_listen_usec = 1024 * tu;
 
+	wpa_printf(MSG_INFO,
+		   "P2P-FIND: enter LISTEN state on freq=%d for %u ms (idle gap, NO probe requests)",
+		   freq, (unsigned int)(1024 * tu / 1000));
+
 	if (p2p->cfg->start_listen(p2p->cfg->cb_ctx, freq, 1024 * tu / 1000,
 		    ies) < 0) {
 		p2p_dbg(p2p, "Failed to start listen mode");
@@ -1047,6 +1051,9 @@ static void p2p_search(struct p2p_data *p2p)
 		type = P2P_SCAN_SOCIAL;
 		p2p_dbg(p2p, "Starting search");
 	}
+
+	wpa_printf(MSG_INFO, "P2P-FIND: enter SEARCH state (scan/probe burst), type=%d freq=%d",
+		   type, freq);
 
 	res = p2p->cfg->p2p_scan(p2p->cfg->cb_ctx, type, freq,
 				 p2p->num_req_dev_types, p2p->req_dev_types,
