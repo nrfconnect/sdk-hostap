@@ -61,6 +61,7 @@ struct wpa_state_machine {
 	unsigned int pmk_len;
 	u8 pmkid[PMKID_LEN]; /* valid if pmkid_set == 1 */
 	struct wpa_ptk PTK;
+	enum rsn_hash_alg hash_alg;
 	u8 keyidx_active;
 	bool use_ext_key_id;
 	bool PTK_valid;
@@ -97,6 +98,7 @@ struct wpa_state_machine {
 #endif /* CONFIG_IEEE80211R_AP */
 	unsigned int is_wnmsleep:1;
 	unsigned int pmkid_set:1;
+	unsigned int spp_amsdu:1;
 
 	unsigned int ptkstart_without_success;
 
@@ -183,6 +185,7 @@ struct wpa_state_machine {
 
 	struct mld_link {
 		bool valid;
+		bool rejected;
 		u8 peer_addr[ETH_ALEN];
 
 		struct wpa_authenticator *wpa_auth;
@@ -190,6 +193,9 @@ struct wpa_state_machine {
 #endif /* CONFIG_IEEE80211BE */
 
 	bool ssid_protection;
+
+	struct wpabuf *sae_pw_id;
+	unsigned int sae_pw_id_counter;
 };
 
 
@@ -266,6 +272,8 @@ struct wpa_authenticator {
 #endif /* CONFIG_P2P */
 
 #ifdef CONFIG_IEEE80211BE
+	/* MLD-level PMKSA cache for non-AP MLD entries only. */
+	struct rsn_pmksa_cache *ml_pmksa;
 	bool is_ml;
 	u8 mld_addr[ETH_ALEN];
 	u8 link_id;

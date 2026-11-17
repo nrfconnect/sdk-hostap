@@ -157,7 +157,7 @@ int aes_128_cbc_encrypt_psa(const u8 *key, const u8 *iv, u8 *data, size_t data_l
 
     if (data_len > SUPP_PSA_MAX_OUTPUT_SIZE)
     {
-        printk("%s invalid input len %d", __func__, data_len);
+        printk("%s invalid input len %zu", __func__, data_len);
         return -1;
     }
 
@@ -200,7 +200,7 @@ int aes_128_cbc_decrypt_psa(const u8 *key, const u8 *iv, u8 *data, size_t data_l
 
     if (data_len > SUPP_PSA_MAX_OUTPUT_SIZE)
     {
-        printk("%s invalid input len %d", __func__, data_len);
+        printk("%s invalid input len %zu", __func__, data_len);
         return -1;
     }
 
@@ -243,7 +243,7 @@ int aes_ctr_encrypt_psa(const u8 *key, size_t key_len, const u8 *nonce, u8 *data
 
     if (data_len > SUPP_PSA_MAX_OUTPUT_SIZE)
     {
-        printk("%s invalid input len %d", __func__, data_len);
+        printk("%s invalid input len %zu", __func__, data_len);
         return -1;
     }
 

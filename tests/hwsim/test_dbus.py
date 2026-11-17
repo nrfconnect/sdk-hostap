@@ -13,6 +13,7 @@ import shutil
 import struct
 import sys
 from test_ap_hs20 import hs20_ap_params
+from test_nan_usd import check_nan_usd_capab, split_nan_event
 
 try:
     if sys.version_info[0] > 2:
@@ -61,25 +62,54 @@ def prepare_dbus(dev):
     except Exception as e:
         raise HwsimSkip("Could not connect to D-Bus: %s" % e)
 
+def assert_dev_addr(p2p, expected):
+    property = p2p.Get(WPAS_DBUS_IFACE_P2PDEVICE, "DeviceAddress",
+                     dbus_interface=dbus.PROPERTIES_IFACE)
+    dev_addr_str = ''
+    for item in property:
+        if len(dev_addr_str) > 0:
+            dev_addr_str += ':'
+        dev_addr_str += '%02x' % item
+
+    if expected  != dev_addr_str:
+        raise Exception("Expected device addr to be %s, got %s" % (expected, dev_addr_str))
+
 class TestDbus(object):
     def __init__(self, bus):
         self.loop = gobject.MainLoop()
         self.signals = []
         self.bus = bus
+        self._timeout_id = 0
 
     def __exit__(self, type, value, traceback):
         for s in self.signals:
             s.remove()
 
+        if self._timeout_id:
+            gobject.source_remove(self._timeout_id)
+
     def add_signal(self, handler, interface, name, byte_arrays=False):
-        s = self.bus.add_signal_receiver(handler, dbus_interface=interface,
+        # Insert sleep to ensure WPA_DBUS_SEND_PROP_CHANGED_TIMEOUT passes
+        def int_handler(*args):
+            nonlocal handler
+            time.sleep(0.005)
+            handler(*args)
+
+        s = self.bus.add_signal_receiver(int_handler, dbus_interface=interface,
                                          signal_name=name,
                                          byte_arrays=byte_arrays)
         self.signals.append(s)
 
-    def timeout(self, *args):
+    def set_timeout(self, timeout):
+        if self._timeout_id:
+            gobject.source_remove(self._timeout_id)
+        self._timeout_id = gobject.timeout_add(timeout, self._timeout)
+
+    def _timeout(self, *args):
         logger.debug("timeout")
         self.loop.quit()
+
+        self._timeout_id = 0
         return False
 
 class alloc_fail_dbus(object):
@@ -472,7 +502,7 @@ def _test_dbus_get_set_wps(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_sets)
-            gobject.timeout_add(1000, self.timeout)
+            self.set_timeout(1000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE_WPS,
                             "PropertiesChanged")
             self.add_signal(self.propertiesChanged2, dbus.PROPERTIES_IFACE,
@@ -653,7 +683,7 @@ def _test_dbus_wps_pbc(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.start_pbc)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.wpsEvent, WPAS_DBUS_IFACE_WPS, "Event")
             self.add_signal(self.credentials, WPAS_DBUS_IFACE_WPS,
                             "Credentials")
@@ -713,7 +743,7 @@ def test_dbus_wps_pbc_overlap(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.start_pbc)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.wpsEvent, WPAS_DBUS_IFACE_WPS, "Event")
             self.loop.run()
             return self
@@ -767,7 +797,7 @@ def _test_dbus_wps_pin(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.start_pin)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.wpsEvent, WPAS_DBUS_IFACE_WPS, "Event")
             self.add_signal(self.credentials, WPAS_DBUS_IFACE_WPS,
                             "Credentials")
@@ -827,7 +857,7 @@ def _test_dbus_wps_pin2(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.start_pin)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.wpsEvent, WPAS_DBUS_IFACE_WPS, "Event")
             self.add_signal(self.credentials, WPAS_DBUS_IFACE_WPS,
                             "Credentials")
@@ -890,7 +920,7 @@ def _test_dbus_wps_pin_m2d(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.start_pin)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.wpsEvent, WPAS_DBUS_IFACE_WPS, "Event")
             self.add_signal(self.credentials, WPAS_DBUS_IFACE_WPS,
                             "Credentials")
@@ -953,7 +983,7 @@ def _test_dbus_wps_reg(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(100, self.start_reg)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.wpsEvent, WPAS_DBUS_IFACE_WPS, "Event")
             self.add_signal(self.credentials, WPAS_DBUS_IFACE_WPS,
                             "Credentials")
@@ -1096,7 +1126,7 @@ def test_dbus_scan(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_scan)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.scanDone, WPAS_DBUS_IFACE, "ScanDone")
             self.add_signal(self.bssAdded, WPAS_DBUS_IFACE, "BSSAdded")
             self.add_signal(self.bssRemoved, WPAS_DBUS_IFACE, "BSSRemoved")
@@ -1304,7 +1334,7 @@ def test_dbus_connect(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.networkAdded, WPAS_DBUS_IFACE, "NetworkAdded")
             self.add_signal(self.networkRemoved, WPAS_DBUS_IFACE,
                             "NetworkRemoved")
@@ -1405,7 +1435,7 @@ def test_dbus_remove_connected(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.networkAdded, WPAS_DBUS_IFACE, "NetworkAdded")
             self.add_signal(self.networkRemoved, WPAS_DBUS_IFACE,
                             "NetworkRemoved")
@@ -1504,7 +1534,7 @@ def test_dbus_connect_psk_mem(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.add_signal(self.networkRequest, WPAS_DBUS_IFACE,
@@ -1541,8 +1571,19 @@ def test_dbus_connect_psk_mem(dev, apdev):
         if not t.success():
             raise Exception("Expected signals not seen")
 
-def test_dbus_connect_oom(dev, apdev):
-    """D-Bus AddNetwork and connect when out-of-memory"""
+def test_dbus_connect_oom_1_100(dev, apdev):
+    """D-Bus AddNetwork and connect when out-of-memory (1-100)"""
+    run_dbus_connect_oom(dev, apdev, 1, 100)
+
+def test_dbus_connect_oom_101_200(dev, apdev):
+    """D-Bus AddNetwork and connect when out-of-memory (101-200)"""
+    run_dbus_connect_oom(dev, apdev, 101, 200)
+
+def test_dbus_connect_oom_201_300(dev, apdev):
+    """D-Bus AddNetwork and connect when out-of-memory (201-300)"""
+    run_dbus_connect_oom(dev, apdev, 251, 300)
+
+def run_dbus_connect_oom(dev, apdev, start, stop):
     (bus, wpas_obj, path, if_obj) = prepare_dbus(dev[0])
     iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
 
@@ -1564,7 +1605,7 @@ def test_dbus_connect_oom(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(1500, self.timeout)
+            self.set_timeout(1500)
             self.add_signal(self.networkAdded, WPAS_DBUS_IFACE, "NetworkAdded")
             self.add_signal(self.networkRemoved, WPAS_DBUS_IFACE,
                             "NetworkRemoved")
@@ -1607,11 +1648,27 @@ def test_dbus_connect_oom(dev, apdev):
                     if 'frequency' not in res or res['frequency'] != 2412:
                         self.state = -1
                         logger.info("Unexpected SignalPoll result")
-                    iface.RemoveNetwork(self.netw)
+                    try:
+                        iface.RemoveNetwork(self.netw)
+                    except dbus.exceptions.DBusException as e:
+                        # Work around known issues caused by OOM messing up with
+                        # D-Bus message processing.
+                        if "InvalidArgs" in str(e):
+                            iface.RemoveNetwork(self.netw)
+                        else:
+                            raise
             if 'State' in properties and properties['State'] == "disconnected":
                 if self.state == 1:
                     self.state = 2
-                    iface.SelectNetwork(self.netw)
+                    try:
+                        iface.SelectNetwork(self.netw)
+                    except dbus.exceptions.DBusException as e:
+                        # Work around known issues caused by OOM messing up with
+                        # D-Bus message processing.
+                        if "InvalidArgs" in str(e):
+                            iface.SelectNetwork(self.netw)
+                        else:
+                            raise
                 elif self.state == 3:
                     self.state = 4
                     iface.Reassociate()
@@ -1648,7 +1705,8 @@ def test_dbus_connect_oom(dev, apdev):
             return self.state == 7
 
     count = 0
-    for i in range(1, 1000):
+    for i in range(start, stop + 1):
+        hapd.dump_monitor()
         for j in range(3):
             dev[j].dump_monitor()
         dev[0].request("TEST_ALLOC_FAIL %d:main" % i)
@@ -1723,7 +1781,7 @@ def test_dbus_connect_eap(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.add_signal(self.certification, WPAS_DBUS_IFACE,
@@ -2016,17 +2074,32 @@ def test_dbus_interface(dev, apdev):
     finally:
         # Need to force P2P channel list update since the 'lo' interface
         # with driver=none ends up configuring default dualband channels.
+        dev[0].dump_monitor()
         dev[0].request("SET country US")
         ev = dev[0].wait_event(["CTRL-EVENT-REGDOM-CHANGE"], timeout=1)
         if ev is None:
             ev = dev[0].wait_global_event(["CTRL-EVENT-REGDOM-CHANGE"],
                                           timeout=1)
+        if ev is None or "alpha2=US" not in ev:
+            ev = dev[0].wait_event(["CTRL-EVENT-REGDOM-CHANGE"], timeout=1)
+            ev = dev[0].wait_global_event(["CTRL-EVENT-REGDOM-CHANGE"],
+                                          timeout=1)
+        dev[0].dump_monitor()
+
         dev[0].request("SET country 00")
         ev = dev[0].wait_event(["CTRL-EVENT-REGDOM-CHANGE"], timeout=1)
         if ev is None:
             ev = dev[0].wait_global_event(["CTRL-EVENT-REGDOM-CHANGE"],
                                           timeout=1)
+        if ev is None or "type=WORLD" not in ev:
+            ev = dev[0].wait_event(["CTRL-EVENT-REGDOM-CHANGE"], timeout=1)
+            ev = dev[0].wait_global_event(["CTRL-EVENT-REGDOM-CHANGE"],
+                                          timeout=1)
+
         subprocess.call(['iw', 'reg', 'set', '00'])
+        cc = dev[0].get_driver_status_field("country")
+        if cc != '00':
+            logger.info("Country code not cleared to 00: " + cc)
 
 def _test_dbus_interface(dev, apdev):
     (bus, wpas_obj, path, if_obj) = prepare_dbus(dev[0])
@@ -2198,7 +2271,7 @@ def test_dbus_blob(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_blob)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.blobAdded, WPAS_DBUS_IFACE, "BlobAdded")
             self.add_signal(self.blobRemoved, WPAS_DBUS_IFACE, "BlobRemoved")
             self.loop.run()
@@ -2346,7 +2419,7 @@ def test_dbus_tdls(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_tdls)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.loop.run()
@@ -2417,7 +2490,7 @@ def test_dbus_tdls_channel_switch(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_tdls)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.loop.run()
@@ -2812,7 +2885,7 @@ def test_dbus_probe_req_reporting(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
                             "GroupStarted")
             self.add_signal(self.probeRequest, WPAS_DBUS_IFACE, "ProbeRequest",
@@ -3179,6 +3252,7 @@ def run_dbus_p2p_discovery(dev, apdev):
     p2p = dbus.Interface(if_obj, WPAS_DBUS_IFACE_P2PDEVICE)
 
     addr0 = dev[0].p2p_dev_addr()
+    assert_dev_addr(p2p, addr0);
 
     dev[1].request("SET sec_device_type 1-0050F204-2")
     dev[1].request("VENDOR_ELEM_ADD 1 dd0c0050f2041049000411223344")
@@ -3219,7 +3293,7 @@ def run_dbus_p2p_discovery(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.deviceFoundProperties,
@@ -3369,7 +3443,7 @@ def test_dbus_p2p_discovery_freq(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(5000, self.timeout)
+            self.set_timeout(5000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.loop.run()
@@ -3579,7 +3653,7 @@ def test_dbus_p2p_service_discovery_query(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.serviceDiscoveryResponse,
@@ -3640,7 +3714,7 @@ def _test_dbus_p2p_service_discovery_external(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.serviceDiscoveryRequest,
@@ -3706,7 +3780,7 @@ def test_dbus_p2p_autogo(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -3749,6 +3823,18 @@ def test_dbus_p2p_autogo(dev, apdev):
             if go != '/':
                 self.exceptions = True
                 raise Exception("Unexpected PeerGO value: " + str(go))
+
+            g_obj = bus.get_object(WPAS_DBUS_SERVICE, self.group)
+            res = g_obj.GetAll(WPAS_DBUS_GROUP,
+                               dbus_interface=dbus.PROPERTIES_IFACE,
+                               byte_arrays=True)
+            logger.debug("Group properties: " + str(res))
+            if "GODeviceAddress" not in res:
+                raise Exeption("GODeviceAddress not included in group proterties")
+            go_dev_addr = ':'.join(["%02x" % i for i in struct.unpack('6B', res["GODeviceAddress"])])
+            if go_dev_addr != dev[0].p2p_dev_addr():
+                raise Exception("Unexpected GODeviceAddress value: " + go_dev_addr)
+
             if self.first:
                 self.first = False
                 logger.info("Remove persistent group instance")
@@ -3965,7 +4051,7 @@ def test_dbus_p2p_autogo_pbc(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -4051,7 +4137,7 @@ def test_dbus_p2p_autogo_legacy(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
                             "GroupStarted")
             self.add_signal(self.groupFinished, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -4124,7 +4210,7 @@ def test_dbus_p2p_join(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -4181,6 +4267,11 @@ def test_dbus_p2p_join(dev, apdev):
                                dbus_interface=dbus.PROPERTIES_IFACE,
                                byte_arrays=True)
             logger.debug("Group properties: " + str(res))
+            if "GODeviceAddress" not in res:
+                raise Exeption("GODeviceAddress not included in group proterties")
+            go_dev_addr = ':'.join(["%02x" % i for i in struct.unpack('6B', res["GODeviceAddress"])])
+            if go_dev_addr != dev[1].p2p_dev_addr():
+                raise Exception("Unexpected GODeviceAddress value: " + go_dev_addr)
 
             ext = dbus.ByteArray(b"\x11\x22\x33\x44")
             try:
@@ -4246,7 +4337,7 @@ def test_dbus_p2p_invitation_received(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.invitationReceived, WPAS_DBUS_IFACE_P2PDEVICE,
                             "InvitationReceived")
             self.loop.run()
@@ -4380,7 +4471,7 @@ def test_dbus_p2p_persistent(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
                             "GroupStarted")
             self.add_signal(self.groupFinished, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -4479,7 +4570,7 @@ def test_dbus_p2p_reinvoke_persistent(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -4606,7 +4697,7 @@ def test_dbus_p2p_go_neg_rx(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.goNegotiationRequest,
@@ -4690,7 +4781,7 @@ def test_dbus_p2p_go_neg_auth(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.goNegotiationSuccess,
@@ -4789,7 +4880,7 @@ def test_dbus_p2p_go_neg_init(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.goNegotiationSuccess,
@@ -4882,7 +4973,7 @@ def test_dbus_p2p_group_termination_by_go(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.goNegotiationSuccess,
@@ -4976,7 +5067,7 @@ def _test_dbus_p2p_group_idle_timeout(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.add_signal(self.goNegotiationSuccess,
@@ -5020,7 +5111,7 @@ def _test_dbus_p2p_group_idle_timeout(dev, apdev):
             # Force disassociation with different reason code so that the
             # P2P Client using D-Bus does not get normal group termination event
             # from the GO.
-            dev[1].group_request("DEAUTHENTICATE " + ifaddr + " reason=0 test=0")
+            dev[1].group_request("DEAUTHENTICATE " + ifaddr + " reason=0 test=1")
             dev[1].remove_group()
 
         def groupFinished(self, properties):
@@ -5059,6 +5150,7 @@ def test_dbus_p2p_wps_failure(dev, apdev):
     (bus, wpas_obj, path, if_obj) = prepare_dbus(dev[0])
     p2p = dbus.Interface(if_obj, WPAS_DBUS_IFACE_P2PDEVICE)
     addr0 = dev[0].p2p_dev_addr()
+    assert_dev_addr(p2p, addr0);
 
     class TestDbusP2p(TestDbus):
         def __init__(self, bus):
@@ -5068,7 +5160,7 @@ def test_dbus_p2p_wps_failure(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.goNegotiationRequest,
                             WPAS_DBUS_IFACE_P2PDEVICE,
                             "GONegotiationRequest",
@@ -5140,6 +5232,8 @@ def test_dbus_p2p_two_groups(dev, apdev):
     addr2 = dev[2].p2p_dev_addr()
     dev[1].p2p_start_go(freq=2412)
 
+    assert_dev_addr(p2p, addr0);
+
     class TestDbusP2p(TestDbus):
         def __init__(self, bus):
             TestDbus.__init__(self, bus)
@@ -5152,7 +5246,7 @@ def test_dbus_p2p_two_groups(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, dbus.PROPERTIES_IFACE,
                             "PropertiesChanged", byte_arrays=True)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
@@ -5325,6 +5419,8 @@ def test_dbus_p2p_cancel(dev, apdev):
         pass
 
     addr0 = dev[0].p2p_dev_addr()
+    assert_dev_addr(p2p, addr0);
+
     dev[1].p2p_listen()
 
     class TestDbusP2p(TestDbus):
@@ -5334,7 +5430,7 @@ def test_dbus_p2p_cancel(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.deviceFound, WPAS_DBUS_IFACE_P2PDEVICE,
                             "DeviceFound")
             self.loop.run()
@@ -5404,7 +5500,7 @@ def test_dbus_p2p_ip_addr(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.groupStarted, WPAS_DBUS_IFACE_P2PDEVICE,
                             "GroupStarted")
             self.loop.run()
@@ -5532,7 +5628,7 @@ def test_dbus_ap(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.networkAdded, WPAS_DBUS_IFACE, "NetworkAdded")
             self.add_signal(self.networkSelected, WPAS_DBUS_IFACE,
                             "NetworkSelected")
@@ -5634,7 +5730,7 @@ def test_dbus_ap_scan(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.add_signal(self.scanDone, WPAS_DBUS_IFACE, "ScanDone")
@@ -5695,7 +5791,7 @@ def test_dbus_connect_wpa_eap(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.add_signal(self.eap, WPAS_DBUS_IFACE, "EAP")
@@ -5939,7 +6035,7 @@ def test_dbus_assoc_reject(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.loop.run()
@@ -5988,7 +6084,7 @@ def test_dbus_mesh(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_test)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.meshGroupStarted, WPAS_DBUS_IFACE_MESH,
                             "MeshGroupStarted")
             self.add_signal(self.meshGroupRemoved, WPAS_DBUS_IFACE_MESH,
@@ -6066,7 +6162,7 @@ def test_dbus_roam(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_IFACE,
                             "PropertiesChanged")
             self.loop.run()
@@ -6187,7 +6283,7 @@ def test_dbus_interworking(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_select)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.interworkingAPAdded, WPAS_DBUS_IFACE,
                             "InterworkingAPAdded")
             self.add_signal(self.interworkingSelectDone, WPAS_DBUS_IFACE,
@@ -6260,7 +6356,7 @@ def test_dbus_hs20_terms_and_conditions(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_connect)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.hs20TermsAndConditions, WPAS_DBUS_IFACE,
                             "HS20TermsAndConditions")
             self.loop.run()
@@ -6349,7 +6445,7 @@ def test_dbus_anqp_query_done(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_query)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.anqpQueryDone, WPAS_DBUS_IFACE,
                             "ANQPQueryDone")
             self.loop.run()
@@ -6397,7 +6493,7 @@ def test_dbus_bss_anqp_properties(dev, apdev):
 
         def __enter__(self):
             gobject.timeout_add(1, self.run_query)
-            gobject.timeout_add(15000, self.timeout)
+            self.set_timeout(15000)
             self.add_signal(self.propertiesChanged, WPAS_DBUS_BSS,
                             "PropertiesChanged")
             self.loop.run()
@@ -6424,3 +6520,268 @@ def test_dbus_bss_anqp_properties(dev, apdev):
     with TestDbusANQPBSSPropertiesChanged(bus) as t:
         if not t.success():
             raise Exception("Expected signals not seen")
+
+def test_dbus_nan_usd_publish(dev, apdev):
+    """D-Bus NAN USD publish"""
+    check_nan_usd_capab(dev[0])
+    (bus, wpa_obj, path, if_obj) = prepare_dbus(dev[0])
+    iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
+
+    class TestDbusNANUSD(TestDbus):
+        def __init__(self, bus):
+            TestDbus.__init__(self, bus)
+            self.publish_terminated = False
+
+        def __enter__(self):
+            gobject.timeout_add(1, self.start_publish)
+            gobject.timeout_add(500, self.stop_publish)
+            self.set_timeout(15000)
+            self.add_signal(self.nanPublishTerminated, WPAS_DBUS_IFACE,
+                            "NANPublishTerminated")
+            self.loop.run()
+            return self
+
+        def nanPublishTerminated(self, publish_id, reason):
+            logger.debug("nanPublishTerminated: %d %s" % (publish_id, reason))
+            if publish_id == self.publish_id:
+                self.publish_terminated = True
+
+        def start_publish(self, *args):
+            self.publish_id = iface.NANPublish({'srv_name': 'test service',
+                                                'srv_proto_type': 2,
+                                                'ssi': dbus.ByteArray(b'test')})
+            iface.NANUpdatePublish({'publish_id': self.publish_id,
+                                    'ssi': dbus.ByteArray(b'new')})
+            return False
+
+        def stop_publish(self, *args):
+            iface.NANCancelPublish(self.publish_id)
+            return False
+
+        def success(self):
+            return self.publish_terminated
+
+    with TestDbusNANUSD(bus) as t:
+        if not t.success():
+            raise Exception("Expected signals not seen")
+
+def test_dbus_nan_usd_subscribe(dev, apdev):
+    """D-Bus NAN USD subscribe"""
+    check_nan_usd_capab(dev[0])
+    (bus, wpa_obj, path, if_obj) = prepare_dbus(dev[0])
+    iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
+
+    class TestDbusNANUSD(TestDbus):
+        def __init__(self, bus):
+            TestDbus.__init__(self, bus)
+            self.subscribe_terminated = False
+
+        def __enter__(self):
+            gobject.timeout_add(1, self.start_subscribe)
+            gobject.timeout_add(500, self.stop_subscribe)
+            self.set_timeout(15000)
+            self.add_signal(self.nanSubscribeTerminated, WPAS_DBUS_IFACE,
+                            "NANSubscribeTerminated")
+            self.loop.run()
+            return self
+
+        def nanSubscribeTerminated(self, subscribe_id, reason):
+            logger.debug("nanSubscribeTerminated: %d %s" % (subscribe_id, reason))
+            if subscribe_id == self.subscribe_id:
+                self.subscribe_terminated = True
+                self.loop.quit()
+
+        def start_subscribe(self, *args):
+            self.subscribe_id = iface.NANSubscribe({'srv_name': 'test service',
+                                                    'srv_proto_type': 2,
+                                                    'ssi': dbus.ByteArray(b'test')})
+            return False
+
+        def stop_subscribe(self, *args):
+            iface.NANCancelSubscribe(self.subscribe_id)
+            return False
+
+        def success(self):
+            return self.subscribe_terminated
+
+    with TestDbusNANUSD(bus) as t:
+        if not t.success():
+            raise Exception("Expected signals not seen")
+
+def test_dbus_nan_usd_subscribe_followup(dev, apdev):
+    """D-Bus NAN USD subscribe and followup"""
+    check_nan_usd_capab(dev[0])
+    check_nan_usd_capab(dev[1])
+    (bus, wpa_obj, path, if_obj) = prepare_dbus(dev[0])
+    iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
+
+    class TestDbusNANUSD(TestDbus):
+        def __init__(self, bus):
+            TestDbus.__init__(self, bus)
+            self.subscribe_terminated = False
+            self.discovered = False
+            self.followup = False
+
+        def __enter__(self):
+            gobject.timeout_add(1, self.start_subscribe)
+            self.set_timeout(15000)
+            self.add_signal(self.nanDiscoveryResult, WPAS_DBUS_IFACE,
+                            "NANDiscoveryResult")
+            self.add_signal(self.nanSubscribeTerminated, WPAS_DBUS_IFACE,
+                            "NANSubscribeTerminated")
+            self.loop.run()
+            return self
+
+        def nanDiscoveryResult(self, args):
+            logger.debug("nanDiscoveryResult: %s" % str(args))
+            ssi = args['ssi']
+            publish_id = args['publish_id']
+            subscribe_id = args['subscribe_id']
+            peer_addr = args['peer_addr']
+            if publish_id == self.id1 and \
+               subscribe_id == self.subscribe_id and \
+               args['srv_proto_type'] == 3 and \
+               peer_addr == dev[1].own_addr() and \
+               len(ssi) == 2 and ssi[0] == 0x66 and ssi[1] == 0x77:
+                self.discovered = True
+                ev = dev[1].wait_event(["NAN-RECEIVE"], timeout=5)
+                if ev is None:
+                    raise Exception("Automatically sent Follow-up message without ssi not seen")
+                iface.NANTransmit({'handle': subscribe_id,
+                                   'req_instance_id': publish_id,
+                                   'peer_addr': peer_addr,
+                                   'ssi': dbus.ByteArray(b'followup')})
+                ev = dev[1].wait_event(["NAN-RECEIVE"], timeout=5)
+                if ev is None:
+                    raise Exception("Follow-up message not seen")
+                if "ssi=666f6c6c6f777570" not in ev.split(' '):
+                    raise Exception("Expected SSI not seen in Follow-up")
+                self.followup = True
+                iface.NANCancelSubscribe(self.subscribe_id)
+            else:
+                logger.info("nanDiscoveryResult values did not match")
+
+        def nanSubscribeTerminated(self, subscribe_id, reason):
+            logger.debug("nanSubscribeTerminated: %d %s" % (subscribe_id, reason))
+            if subscribe_id == self.subscribe_id:
+                self.subscribe_terminated = True
+                self.loop.quit()
+
+        def start_subscribe(self, *args):
+            self.subscribe_id = iface.NANSubscribe({'srv_name': '_test',
+                                                    'srv_proto_type': 3,
+                                                    'ssi': dbus.ByteArray(b'test')})
+
+            # Setting up the RoC takes a little bit of time. Avoid racing with
+            # the TX here by sleeping a little bit.
+            time.sleep(0.01)
+            cmd = "NAN_PUBLISH service_name=_test srv_proto_type=3 ssi=6677 ttl=10"
+            self.id1 = dev[1].request(cmd)
+            if "FAIL" in self.id1:
+                raise Exception("NAN_PUBLISH failed")
+            self.id1 = int(self.id1)
+            return False
+
+        def success(self):
+            return self.subscribe_terminated and self.discovered and \
+                self.followup
+
+    with TestDbusNANUSD(bus) as t:
+        if not t.success():
+            raise Exception("Expected signals not seen")
+
+def test_dbus_nan_usd_publish_followup(dev, apdev):
+    """D-Bus NAN USD publish and followup"""
+    check_nan_usd_capab(dev[0])
+    (bus, wpa_obj, path, if_obj) = prepare_dbus(dev[0])
+    iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
+
+    class TestDbusNANUSD(TestDbus):
+        def __init__(self, bus):
+            TestDbus.__init__(self, bus)
+            self.publish_terminated = False
+            self.receive = False
+            self.first_receive = True
+            self.followup = False
+
+        def __enter__(self):
+            gobject.timeout_add(1, self.start_publish)
+            self.set_timeout(15000)
+            self.add_signal(self.nanPublishTerminated, WPAS_DBUS_IFACE,
+                            "NANPublishTerminated")
+            self.add_signal(self.nanReceive, WPAS_DBUS_IFACE,
+                            "NANReceive")
+            self.loop.run()
+            return self
+
+        def nanPublishTerminated(self, publish_id, reason):
+            logger.debug("nanPublishTerminated: %d %s" % (publish_id, reason))
+            if publish_id == self.publish_id:
+                self.publish_terminated = True
+                self.loop.quit()
+
+        def nanReceive(self, args):
+            logger.debug("nanReceive: %s" % str(args))
+            self.receive = True
+            if self.first_receive:
+                self.first_receive = False
+                return
+            ssi = args['ssi']
+            if len(ssi) == 2 and ssi[0] == 0x88 and ssi[1] == 0x99:
+                self.followup = True
+                iface.NANTransmit({'handle': args['id'],
+                                   'req_instance_id': args['peer_id'],
+                                   'peer_addr': args['peer_addr'],
+                                   'ssi': dbus.ByteArray(b'followup')})
+                iface.NANCancelPublish(self.publish_id)
+
+        def start_publish(self, *args):
+            cmd = "NAN_SUBSCRIBE service_name=_test srv_proto_type=3 ssi=1122334455"
+            id1 = dev[1].request(cmd)
+            if "FAIL" in id1:
+                raise Exception("NAN_SUBSCRIBE failed")
+
+            # Setting up the RoC takes a little bit of time. Avoid racing with
+            # the TX here by sleeping a little bit.
+            time.sleep(0.01)
+            self.publish_id = iface.NANPublish({'srv_name': '_test',
+                                                'srv_proto_type': 2,
+                                                'ssi': dbus.ByteArray(b'test')})
+
+            ev = dev[1].wait_event(["NAN-DISCOVERY-RESULT"], timeout=10)
+            if ev is None:
+                raise Exception("DiscoveryResult event not seen")
+
+            vals = split_nan_event(ev)
+            cmd = "NAN_TRANSMIT handle={} req_instance_id={} address={} ssi=8899".format(vals['subscribe_id'], vals['publish_id'], vals['address'])
+            if "FAIL" in dev[1].request(cmd):
+                raise Exception("NAN_TRANSMIT failed")
+
+            return False
+
+        def success(self):
+            return self.publish_terminated and self.receive and self.followup
+
+    with TestDbusNANUSD(bus) as t:
+        if not t.success():
+            raise Exception("Expected signals not seen")
+
+def test_dbus_scan_freq_network(dev, apdev):
+    """D-Bus scanning channels based on network profiles"""
+    (bus, wpas_obj, path, if_obj) = prepare_dbus(dev[0])
+    iface = dbus.Interface(if_obj, WPAS_DBUS_IFACE)
+
+    hostapd.add_ap(apdev[0], {"ssid": "test-scan"})
+
+    args = dbus.Dictionary({'ssid': "foo",
+                            'key_mgmt': 'NONE'},
+                           signature='sv')
+    netw0 = iface.AddNetwork(args)
+
+    args = dbus.Dictionary({'ssid': "test-scan",
+                            'key_mgmt': 'NONE',
+                            'scan_freq': 2412},
+                           signature='sv')
+    netw = iface.AddNetwork(args)
+    iface.SelectNetwork(netw)
+    dev[0].wait_connected()

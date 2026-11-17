@@ -122,6 +122,10 @@ def check_sae_pk_capab(dev):
     if capab is None or "PK" not in capab:
         raise HwsimSkip("SAE-PK not supported")
 
+def check_owe_capab(dev):
+    if "OWE" not in dev.get_capability("key_mgmt"):
+        raise HwsimSkip("OWE not supported")
+
 def check_erp_capa(dev):
     capab = dev.get_capability("erp")
     if not capab or 'ERP' not in capab:
@@ -145,21 +149,23 @@ def check_imsi_privacy_support(dev):
 
 def check_tls_tod(dev):
     tls = dev.request("GET tls_library")
-    if not tls.startswith("OpenSSL") and not tls.startswith("internal"):
+    if not tls.startswith("OpenSSL") and \
+       not tls.startswith("wolfSSL") and \
+       not tls.startswith("internal"):
         raise HwsimSkip("TLS TOD-TOFU/STRICT not supported with this TLS library: " + tls)
 
 def vht_supported():
     cmd = subprocess.Popen(["iw", "reg", "get"], stdout=subprocess.PIPE)
-    reg = cmd.stdout.read().decode()
+    out, err = cmd.communicate()
+    reg = out.decode()
     if "@ 80)" in reg or "@ 160)" in reg:
         return True
     return False
 
 def eht_320mhz_supported():
-    cmd = subprocess.Popen(["iw", "reg", "get"],
-                           stdout=subprocess.PIPE)
     cmd = subprocess.Popen(["iw", "reg", "get"], stdout=subprocess.PIPE)
-    reg = cmd.stdout.read().decode()
+    out, err = cmd.communicate()
+    reg = out.decode()
     if "@ 320)" in reg:
         return True
     return False
@@ -167,7 +173,8 @@ def eht_320mhz_supported():
 def he_6ghz_supported(freq=5975):
     cmd = subprocess.Popen(["iw", "reg", "get"],
                            stdout=subprocess.PIPE)
-    reg_rules = cmd.stdout.read().decode().splitlines()
+    out, err = cmd.communicate()
+    reg_rules = out.decode().splitlines()
     for rule in reg_rules:
         m = re.search(r"\s*\(\d+\s*-\s*\d+", rule)
         if not m:
@@ -337,3 +344,17 @@ def disable_ipv6(fn):
             sysctl_write('net.ipv6.conf.all.disable_ipv6=0')
             sysctl_write('net.ipv6.conf.default.disable_ipv6=0')
     return cloned_wrapper(wrapper, fn)
+
+def parse_bool(s):
+    # Try parsing as integer of any base (expected 10 or 16),
+    # if that fails, try "True"/"False" literals
+    s = s.strip()
+    try:
+        return bool(int(s, 0))
+    except ValueError as e:
+        if s == 'True':
+            return True
+        elif s == 'False':
+            return False
+        else:
+            raise e
