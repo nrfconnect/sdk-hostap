@@ -131,6 +131,10 @@ for i in 0 1 2; do
 done
 sudo $(printf -- "$VALGRIND_WPAS" 5) $WPAS -g /tmp/wpas-wlan5 -G$GROUP \
     -ddKt$TRACE -f $LOGDIR/log5 &
+sudo $(printf -- "$VALGRIND_WPAS" 6) $WPAS -g /tmp/wpas-wlan6 -G$GROUP \
+    -ddKt$TRACE -f $LOGDIR/log6 &
+sudo $(printf -- "$VALGRIND_WPAS" 7) $WPAS -g /tmp/wpas-wlan7 -G$GROUP \
+    -ddKt$TRACE -f $LOGDIR/log7 &
 sudo $VALGRIND_HAPD $HAPD -ddKt$TRACE -g /var/run/hostapd-global -G $GROUP -f $LOGDIR/hostapd &
 HPID=$!
 

@@ -131,7 +131,7 @@ def test_ap_open_assoc_timeout(dev, apdev):
 
 def test_ap_open_auth_drop_sta(dev, apdev):
     """AP dropping station after successful authentication"""
-    hapd = hostapd.add_ap(apdev[0]['ifname'], {"ssid": "open"})
+    hapd = hostapd.add_ap(apdev[0], {"ssid": "open"})
     dev[0].scan(freq="2412")
     hapd.set("ext_mgmt_frame_handling", "1")
     dev[0].connect("open", key_mgmt="NONE", scan_freq="2412",
@@ -539,7 +539,7 @@ def test_ap_open_ps_mc_buf(dev, apdev, params):
                    bg_scan_period="0")
     hapd.wait_sta()
 
-    buffered_mcast = 0
+    buffered_mcast = False
     try:
         dev[0].cmd_execute(['iw', 'dev', dev[0].ifname,
                             'set', 'power_save', 'on'])
@@ -555,16 +555,16 @@ def test_ap_open_ps_mc_buf(dev, apdev, params):
                              "wlan.fc.type_subtype == 0x0008",
                              ["wlan.tim.bmapctl.multicast"])
             for line in out.splitlines():
-                buffered_mcast = int(line)
-                if buffered_mcast == 1:
+                buffered_mcast = parse_bool(line)
+                if buffered_mcast:
                     break
-            if buffered_mcast == 1:
+            if buffered_mcast:
                 break
     finally:
         dev[0].cmd_execute(['iw', 'dev', dev[0].ifname,
                             'set', 'power_save', 'off'])
 
-    if buffered_mcast != 1:
+    if not buffered_mcast:
         raise Exception("AP did not buffer multicast frames")
 
 @remote_compatible

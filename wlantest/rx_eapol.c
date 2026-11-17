@@ -35,6 +35,7 @@ static size_t determine_mic_len(struct wlantest_sta *sta)
 {
 	size_t pmk_len = PMK_LEN;
 	int group = 0;
+	enum rsn_hash_alg hash = RSN_HASH_NOT_SPECIFIED;
 
 	if (sta && wpa_key_mgmt_sae_ext_key(sta->key_mgmt))
 		group = sta->sae_group;
@@ -42,15 +43,21 @@ static size_t determine_mic_len(struct wlantest_sta *sta)
 		group = sta->owe_group;
 
 	switch (group) {
+	case 19:
+		pmk_len = 32;
+		hash = RSN_HASH_SHA256;
+		break;
 	case 20:
 		pmk_len = 48;
+		hash = RSN_HASH_SHA384;
 		break;
 	case 21:
 		pmk_len = 64;
+		hash = RSN_HASH_SHA512;
 		break;
 	}
 
-	return wpa_mic_len(sta->key_mgmt, pmk_len);
+	return wpa_mic_len(sta->key_mgmt, pmk_len, hash);
 }
 
 
@@ -73,7 +80,8 @@ static int check_mic(struct wlantest_sta *sta, const u8 *kck, size_t kck_len,
 	os_memcpy(rx_mic, key + 1, mic_len);
 	os_memset(key + 1, 0, mic_len);
 
-	if (wpa_eapol_key_mic(kck, kck_len, sta->key_mgmt, ver, buf, len,
+	if (wpa_eapol_key_mic(kck, kck_len, sta->key_mgmt,
+			      RSN_HASH_NOT_SPECIFIED, ver, buf, len,
 			      (u8 *) (key + 1)) == 0 &&
 	    os_memcmp(rx_mic, key + 1, mic_len) == 0)
 		ret = 0;
@@ -343,10 +351,6 @@ static void elems_from_eapol_ie(struct ieee802_11_elems *elems,
 		elems->rsn_ie = ie->rsn_ie + 2;
 		elems->rsn_ie_len = ie->rsn_ie_len - 2;
 	}
-	if (ie->osen) {
-		elems->osen = ie->osen + 2;
-		elems->osen_len = ie->osen_len - 2;
-	}
 }
 
 
@@ -601,7 +605,6 @@ static u8 * decrypt_eapol_key_data(struct wlantest *wt,
 		return decrypt_eapol_key_data_aes(wt, kek, kek_len, hdr,
 						  keydata, keydatalen, len);
 	case WPA_KEY_INFO_TYPE_AKM_DEFINED:
-		/* For now, assume this is OSEN */
 		return decrypt_eapol_key_data_aes(wt, kek, kek_len, hdr,
 						  keydata, keydatalen, len);
 	default:
@@ -677,12 +680,7 @@ static void learn_kde_keys_mlo(struct wlantest *wt, struct wlantest_bss *bss,
 			wpa_hexdump(MSG_DEBUG, "IPN", pn, 6);
 			bss->igtk_len[key_id] = key_len;
 			os_memcpy(bss->igtk[key_id], key, key_len);
-			bss->ipn[key_id][0] = pn[5];
-			bss->ipn[key_id][1] = pn[4];
-			bss->ipn[key_id][2] = pn[3];
-			bss->ipn[key_id][3] = pn[2];
-			bss->ipn[key_id][4] = pn[1];
-			bss->ipn[key_id][5] = pn[0];
+			bss->ipn[key_id] = WPA_GET_LE48(pn);
 			bss->igtk_idx = key_id;
 		} else {
 			add_note(wt, MSG_INFO,
@@ -708,12 +706,7 @@ static void learn_kde_keys_mlo(struct wlantest *wt, struct wlantest_bss *bss,
 			wpa_hexdump(MSG_DEBUG, "BIPN", pn, 6);
 			bss->igtk_len[key_id] = key_len;
 			os_memcpy(bss->igtk[key_id], key, key_len);
-			bss->ipn[key_id][0] = pn[5];
-			bss->ipn[key_id][1] = pn[4];
-			bss->ipn[key_id][2] = pn[3];
-			bss->ipn[key_id][3] = pn[2];
-			bss->ipn[key_id][4] = pn[1];
-			bss->ipn[key_id][5] = pn[0];
+			bss->ipn[key_id] = WPA_GET_LE48(pn);
 			bss->bigtk_idx = key_id;
 		} else {
 			add_note(wt, MSG_INFO,
@@ -801,12 +794,7 @@ static void learn_kde_keys(struct wlantest *wt, struct wlantest_bss *bss,
 				os_memcpy(bss->igtk[id], ie.igtk + 8, 16);
 				bss->igtk_len[id] = 16;
 				ipn = ie.igtk + 2;
-				bss->ipn[id][0] = ipn[5];
-				bss->ipn[id][1] = ipn[4];
-				bss->ipn[id][2] = ipn[3];
-				bss->ipn[id][3] = ipn[2];
-				bss->ipn[id][4] = ipn[1];
-				bss->ipn[id][5] = ipn[0];
+				bss->ipn[id] = WPA_GET_LE48(ipn);
 				bss->igtk_idx = id;
 			}
 		} else if (ie.igtk_len == 40) {
@@ -824,12 +812,7 @@ static void learn_kde_keys(struct wlantest *wt, struct wlantest_bss *bss,
 				os_memcpy(bss->igtk[id], ie.igtk + 8, 32);
 				bss->igtk_len[id] = 32;
 				ipn = ie.igtk + 2;
-				bss->ipn[id][0] = ipn[5];
-				bss->ipn[id][1] = ipn[4];
-				bss->ipn[id][2] = ipn[3];
-				bss->ipn[id][3] = ipn[2];
-				bss->ipn[id][4] = ipn[1];
-				bss->ipn[id][5] = ipn[0];
+				bss->ipn[id] = WPA_GET_LE48(ipn);
 				bss->igtk_idx = id;
 			}
 		} else {
@@ -858,12 +841,7 @@ static void learn_kde_keys(struct wlantest *wt, struct wlantest_bss *bss,
 				os_memcpy(bss->igtk[id], ie.bigtk + 8, 16);
 				bss->igtk_len[id] = 16;
 				ipn = ie.bigtk + 2;
-				bss->ipn[id][0] = ipn[5];
-				bss->ipn[id][1] = ipn[4];
-				bss->ipn[id][2] = ipn[3];
-				bss->ipn[id][3] = ipn[2];
-				bss->ipn[id][4] = ipn[1];
-				bss->ipn[id][5] = ipn[0];
+				bss->ipn[id] = WPA_GET_LE48(ipn);
 				bss->bigtk_idx = id;
 			}
 		} else if (ie.bigtk_len == 40) {
@@ -883,12 +861,7 @@ static void learn_kde_keys(struct wlantest *wt, struct wlantest_bss *bss,
 				os_memcpy(bss->igtk[id], ie.bigtk + 8, 32);
 				bss->igtk_len[id] = 32;
 				ipn = ie.bigtk + 2;
-				bss->ipn[id][0] = ipn[5];
-				bss->ipn[id][1] = ipn[4];
-				bss->ipn[id][2] = ipn[3];
-				bss->ipn[id][3] = ipn[2];
-				bss->ipn[id][4] = ipn[1];
-				bss->ipn[id][5] = ipn[0];
+				bss->ipn[id] = WPA_GET_LE48(ipn);
 				bss->bigtk_idx = id;
 			}
 		} else {
@@ -1495,7 +1468,8 @@ static void rx_data_eapol_key(struct wlantest *wt, const u8 *bssid,
 		 * can be determined. */
 
 		/* Group 20 */
-		alt_mic_len = wpa_mic_len(sta->key_mgmt, 48);
+		alt_mic_len = wpa_mic_len(sta->key_mgmt, 48,
+					  RSN_HASH_SHA384);
 		alt_key_data_length = WPA_GET_BE16(mic + alt_mic_len);
 		alt_key_data = mic + alt_mic_len + 2;
 		if (len >= sizeof(*hdr) + alt_mic_len + 2 &&
@@ -1513,7 +1487,8 @@ static void rx_data_eapol_key(struct wlantest *wt, const u8 *bssid,
 		}
 
 		/* Group 21 */
-		alt_mic_len = wpa_mic_len(sta->key_mgmt, 64);
+		alt_mic_len = wpa_mic_len(sta->key_mgmt, 64,
+					  RSN_HASH_SHA512);
 		alt_key_data_length = WPA_GET_BE16(mic + alt_mic_len);
 		alt_key_data = mic + alt_mic_len + 2;
 		if (len >= sizeof(*hdr) + alt_mic_len + 2 &&
@@ -1718,9 +1693,9 @@ void rx_data_eapol(struct wlantest *wt, const u8 *bssid, const u8 *sta_addr,
 	hdr = (const struct ieee802_1x_hdr *) data;
 	length = be_to_host16(hdr->length);
 	wpa_printf(MSG_DEBUG, "RX EAPOL: " MACSTR " -> " MACSTR "%s ver=%u "
-		   "type=%u len=%u",
+		   "type=%u len=%u #%u",
 		   MAC2STR(src), MAC2STR(dst), prot ? " Prot" : "",
-		   hdr->version, hdr->type, length);
+		   hdr->version, hdr->type, length, wt->frame_num);
 	if (hdr->version < 1 || hdr->version > 3) {
 		wpa_printf(MSG_INFO, "Unexpected EAPOL version %u from "
 			   MACSTR, hdr->version, MAC2STR(src));

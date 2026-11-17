@@ -439,6 +439,36 @@ def test_ap_pmf_ap_dropping_sa(dev, apdev):
     if ev is None or "locally_generated=1" not in ev:
         raise Exception("Locally generated disconnection not reported")
 
+def test_ap_pmf_known_sta_id(dev, apdev):
+    """WPA2-PSK AP and Known STA Identification to avoid association comeback"""
+    ssid = "assoc-comeback"
+    params = hostapd.wpa2_params(ssid=ssid, passphrase="12345678")
+    params["wpa_key_mgmt"] = "WPA-PSK-SHA256"
+    params["ieee80211w"] = "2"
+    params["known_sta_identification"] = "1"
+    hapd = hostapd.add_ap(apdev[0], params)
+    Wlantest.setup(hapd)
+    wt = Wlantest()
+    wt.flush()
+    wt.add_passphrase("12345678")
+    dev[0].connect(ssid, psk="12345678", ieee80211w="2",
+                   key_mgmt="WPA-PSK-SHA256", proto="WPA2",
+                   scan_freq="2412")
+    hapd.wait_sta(wait_4way_hs=True)
+    hapd.set("ext_mgmt_frame_handling", "1")
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected(timeout=10)
+    ev = hapd.wait_event(["MGMT-RX"], timeout=1)
+    if ev is None:
+        raise Exception("Deauthentication frame RX not reported")
+    hapd.set("ext_mgmt_frame_handling", "0")
+    dev[0].request("REASSOCIATE")
+    dev[0].wait_connected(timeout=20, error="Timeout on re-connection")
+    hapd.wait_4way_hs()
+    if wt.get_sta_counter("assocresp_comeback", apdev[0]['bssid'],
+                          dev[0].own_addr()) > 0:
+        raise Exception("AP used association comeback request")
+
 def test_ap_pmf_valid_broadcast_deauth(dev, apdev):
     """WPA2-PSK PMF AP sending valid broadcast deauth without dropping SA"""
     run_ap_pmf_valid(dev, apdev, False, True)
@@ -490,7 +520,7 @@ def run_ap_pmf_valid(dev, apdev, disassociate, broadcast):
 
 def start_wpas_ap(ssid):
     wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
-    wpas.interface_add("wlan5", drv_params="use_monitor=1")
+    wpas.interface_add("wlan5")
     id = wpas.add_network()
     wpas.set_network(id, "mode", "2")
     wpas.set_network_quoted(id, "ssid", ssid)
@@ -1376,7 +1406,7 @@ def check_mac80211_bigtk(dev, hapd):
     replays = int(sta_key['replays'])
     icverrors = int(sta_key['icverrors'])
     if replays > 0 or icverrors > 0:
-        raise Exception("STA reported errors: replays=%d icverrors=%d" % replays, icverrors)
+        raise Exception(f"STA reported errors: replays={replays} icverrors={icverrors}")
 
     rx_spec = int(sta_key['rx_spec'], base=16)
     if rx_spec < 3:
@@ -1504,6 +1534,13 @@ def run_ap_pmf_beacon_protection_mismatch(dev, apdev, clear):
     if "OK" not in res:
         raise Exception("SET_KEY failed")
 
+    if clear:
+        res = hapd.request("SET_KEY %d %s %d %d %s %s %d" % (WPA_ALG_NONE, addr, 7, 1, 6*"00", "", KEY_FLAG_GROUP))
+    else:
+        res = hapd.request("SET_KEY %d %s %d %d %s %s %d" % (WPA_ALG_IGTK, addr, 7, 1, 6*"00", 16*"00", KEY_FLAG_GROUP_TX_DEFAULT))
+    if "OK" not in res:
+        raise Exception("SET_KEY failed")
+
     ev = dev[0].wait_event(["CTRL-EVENT-UNPROT-BEACON"], timeout=5)
     if ev is None:
         raise Exception("Unprotected Beacon frame not reported")
@@ -1596,6 +1633,8 @@ def run_ap_pmf_beacon_protection_unicast(dev, apdev):
     h += "2d1a0c001bffff000000000000000000000100000000000000000000"
     h += "3d1601000000000000000000000000000000000000000000"
     h += "7f0b0400000200000040000010"
+    h += "2503000b01" # CSA
+    h += "3c0400510b01" # ECSA
     h += "dd180050f2020101010003a4000027a4000042435e0062322f00"
 
     frame = binascii.unhexlify(h)
@@ -1603,19 +1642,23 @@ def run_ap_pmf_beacon_protection_unicast(dev, apdev):
     frame2 = binascii.unhexlify(h)
 
     sock.send(radiotap + frame)
-    ev = dev[0].wait_event(["CTRL-EVENT-UNPROT-BEACON"], timeout=5)
-    if ev is None:
-        raise Exception("Unprotected beacon was not reported")
-    if hapd.own_addr() not in ev:
-        raise Exception("Unexpected BSSID in unproted beacon indication")
+    ev = dev[0].wait_event(["CTRL-EVENT-UNPROT-BEACON",
+                            "CTRL-EVENT-STARTED-CHANNEL-SWITCH"], timeout=5)
+    if ev:
+        if "CTRL-EVENT-STARTED-CHANNEL-SWITCH" in ev:
+            raise Exception("Unexpected channel switch reported")
+        if hapd.own_addr() not in ev:
+            raise Exception("Unexpected BSSID in unprotected beacon indication")
 
     time.sleep(10.1)
     sock.send(radiotap + frame2)
-    ev = dev[0].wait_event(["CTRL-EVENT-UNPROT-BEACON"], timeout=5)
-    if ev is None:
-        raise Exception("Unprotected beacon was not reported")
-    if hapd.own_addr() not in ev:
-        raise Exception("Unexpected BSSID in unproted beacon indication")
+    ev = dev[0].wait_event(["CTRL-EVENT-UNPROT-BEACON",
+                            "CTRL-EVENT-STARTED-CHANNEL-SWITCH"], timeout=5)
+    if ev:
+        if "CTRL-EVENT-STARTED-CHANNEL-SWITCH" in ev:
+            raise Exception("Unexpected channel switch reported")
+        if hapd.own_addr() not in ev:
+            raise Exception("Unexpected BSSID in unprotected beacon indication")
 
 def test_ap_pmf_sta_global_require(dev, apdev):
     """WPA2-PSK AP with PMF optional and wpa_supplicant pmf=2"""

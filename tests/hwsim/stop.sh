@@ -18,6 +18,12 @@ if grep -q hwsim0 /proc/net/dev; then
     sudo ip link set hwsim0 down
 fi
 
+if [ -e /tmp/hlr_auc_gw.sock ]; then
+    if which socat > /dev/null; then
+	echo TERMINATE | socat - UNIX-SENDTO:/tmp/hlr_auc_gw.sock
+	sleep 0.1
+    fi
+fi
 sudo killall -q hlr_auc_gw
 
 if [ "$RUNNING" = "yes" ]; then
@@ -58,9 +64,9 @@ for i in `pidof valgrind.bin`; do
 done
 
 count=0
-for i in /tmp/wpas-wlan0 /tmp/wpas-wlan1 /tmp/wpas-wlan2 /tmp/wpas-wlan5 /var/run/hostapd-global /tmp/hlr_auc_gw.sock /tmp/wpa_ctrl_* /tmp/eap_sim_db_*; do
+for i in /tmp/wpas-wlan0 /tmp/wpas-wlan1 /tmp/wpas-wlan2 /tmp/wpas-wlan5 /tmp/wpas-wlan6 /tmp/wpas-wlan7 /var/run/hostapd-global /tmp/hlr_auc_gw.sock /tmp/wpa_ctrl_* /tmp/eap_sim_db_*; do
     count=$(($count + 1))
-    if [ $count -lt 7 -a -e $i ]; then
+    if [ $count -lt 8 -a -e $i ]; then
 	echo "Waiting for ctrl_iface $i to disappear"
 	sleep 1
     fi

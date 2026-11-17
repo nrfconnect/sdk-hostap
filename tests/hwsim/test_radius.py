@@ -1206,7 +1206,8 @@ def build_tunnel_password(secret, authenticator, psk):
     return data
 
 def start_radius_psk_server(psk, invalid_code=False, acct_interim_interval=0,
-                            session_timeout=0, reject=False):
+                            session_timeout=0, reject=False,
+                            inject_invalid=False):
     try:
         import pyrad.server
         import pyrad.packet
@@ -1218,6 +1219,13 @@ def start_radius_psk_server(psk, invalid_code=False, acct_interim_interval=0,
         def _HandleAuthPacket(self, pkt):
             pyrad.server.Server._HandleAuthPacket(self, pkt)
             logger.info("Received authentication request")
+
+            if self.t_events['inject_invalid']:
+                reply = self.CreateReplyPacket(pkt)
+                reply.code = pyrad.packet.AccessAccept
+                build_message_auth(pkt, reply, secret=b'\x00')
+                self.SendReplyPacket(pkt.fd, reply)
+
             reply = self.CreateReplyPacket(pkt)
             reply.code = pyrad.packet.AccessAccept
             if self.t_events['invalid_code']:
@@ -1272,6 +1280,7 @@ def start_radius_psk_server(psk, invalid_code=False, acct_interim_interval=0,
     t_events['acct_interim_interval'] = acct_interim_interval
     t_events['session_timeout'] = session_timeout
     t_events['reject'] = reject
+    t_events['inject_invalid'] = inject_invalid
     t = threading.Thread(target=run_pyrad_server, args=(srv, t_events))
     t.start()
     return t, t_events
@@ -1429,6 +1438,21 @@ def test_radius_psk_oom(dev, apdev):
             dev[0].connect("test-wpa2-psk", psk="12345678", scan_freq="2412",
                            wait_connect=False)
             wait_fail_trigger(hapd, "GET_ALLOC_FAIL")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_psk_discard(dev, apdev):
+    """WPA2 with PSK from RADIUS and discarding invalid RADIUS messages"""
+    t, t_events = start_radius_psk_server("12345678", inject_invalid=True)
+
+    try:
+        params = hostapd_radius_psk_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa2-psk", psk="12345678", scan_freq="2412")
+        t_events['psk'] = "0123456789abcdef"
+        dev[1].connect("test-wpa2-psk", psk="0123456789abcdef",
+                       scan_freq="2412")
     finally:
         t_events['stop'].set()
         t.join()
@@ -1859,20 +1883,21 @@ def test_radius_tls_freeradius(dev, apdev, test_params):
             if pid > 0:
                 os.kill(pid, signal.SIGTERM)
 
-def foo():
-    params['auth_server_addr'] = "127.0.0.1"
-    params['auth_server_port'] = "2083"
-    params['auth_server_type'] = "TLS"
-    params['auth_server_shared_secret'] = "radsec"
-    params['auth_server_ca_cert'] = certdir + "/ca.pem"
-    params['auth_server_client_cert'] = certdir + "/client.pem"
-    params['auth_server_private_key'] = certdir + "/client.key"
-    params['auth_server_private_key_passwd'] = "whatever"
-    params['acct_server_addr'] = "127.0.0.1"
-    params['acct_server_port'] = "2083"
-    params['acct_server_type'] = "TLS"
-    params['acct_server_shared_secret'] = "radsec"
-    params['acct_server_ca_cert'] = certdir + "/ca.pem"
-    params['acct_server_client_cert'] = certdir + "/client.pem"
-    params['acct_server_private_key'] = certdir + "/client.key"
-    params['acct_server_private_key_passwd'] = "whatever"
+def test_radius_eapol_test(dev, apdev, test_params):
+    """RADIUS testing with eapol_test"""
+    et_path = "../../wpa_supplicant/eapol_test"
+    if not os.path.exists(et_path):
+        raise HwsimSkip("eapol_test not available")
+
+    config = test_params['prefix'] + ".eapol_test.conf"
+    with open(config, "w") as f:
+        f.write("network={\n")
+        f.write("eap=PWD\n")
+        f.write('identity="pwd user"\n')
+        f.write('password="secret password"\n')
+        f.write("}\n")
+
+    res = subprocess.check_output([et_path, '-c', config])
+    logger.debug("eapol_test: " + res.decode().strip())
+    if "SUCCESS" not in res.decode().splitlines():
+        raise Exception("eapol_test did not report success")

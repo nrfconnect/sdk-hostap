@@ -654,6 +654,45 @@ static inline int os_snprintf_error(size_t size, int res)
 }
 
 
+/**
+ * os_ffs - Find the position of the first (least significant) set bit
+ * @val: Value to check
+ * Returns: Position of the first set bit (counting from 1), or 0 if val
+ * does not have any bits set
+ *
+ * This is a portable replacement for the ffs() function which, unlike
+ * ffs(), is always available regardless of the C library/compiler in use
+ * and the requested feature test macros (glibc/picolibc based libraries
+ * hide ffs() unless _DEFAULT_SOURCE, _XOPEN_SOURCE >= 700, or similar is
+ * defined in addition to any strict _POSIX_C_SOURCE request).
+ */
+#ifdef _MSC_VER
+#include <intrin.h>
+static inline int os_ffs(unsigned int val)
+{
+	unsigned long index;
+
+	if (!val)
+		return 0;
+	_BitScanForward(&index, val);
+	return (int) index + 1;
+}
+#elif defined(__GNUC__) || defined(__clang__)
+#define os_ffs(val) __builtin_ffs(val)
+#else
+static inline int os_ffs(unsigned int val)
+{
+	int i;
+
+	if (!val)
+		return 0;
+	for (i = 1; !(val & 1); i++, val >>= 1)
+		;
+	return i;
+}
+#endif
+
+
 static inline void * os_realloc_array(void *ptr, size_t nmemb, size_t size)
 {
 	if (size && nmemb > (~(size_t) 0) / size)
@@ -756,16 +795,19 @@ int os_exec(const char *program, const char *arg, int wait_completion);
 #define strcpy OS_DO_NOT_USE_strcpy
 #endif /* OS_REJECT_C_LIB_FUNCTIONS */
 
-
-#if defined(WPA_TRACE_BFD) && defined(CONFIG_TESTING_OPTIONS)
 #define TEST_FAIL() testing_test_fail(NULL, false)
 #define TEST_FAIL_TAG(tag) testing_test_fail(tag, false)
+
+#if defined(WPA_TRACE_BFD) && defined(CONFIG_TESTING_OPTIONS)
 int testing_test_fail(const char *tag, bool is_alloc);
 int testing_set_fail_pattern(bool is_alloc, char *patterns);
 int testing_get_fail_pattern(bool is_alloc, char *buf, size_t buflen);
 #else
-#define TEST_FAIL() 0
-#define TEST_FAIL_TAG(tag) 0
+static inline int testing_test_fail(const char *tag, bool is_alloc)
+{
+	return 0;
+}
+
 static inline int testing_set_fail_pattern(bool is_alloc, char *patterns)
 {
 	return -1;

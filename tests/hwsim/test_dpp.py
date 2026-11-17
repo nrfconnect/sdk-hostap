@@ -1,7 +1,7 @@
 # Test cases for Device Provisioning Protocol (DPP)
 # Copyright (c) 2017, Qualcomm Atheros, Inc.
 # Copyright (c) 2018-2019, The Linux Foundation
-# Copyright (c) 2021-2022, Qualcomm Innovation Center, Inc.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # This software may be distributed under the terms of the BSD license.
 # See README for more details.
@@ -2314,6 +2314,23 @@ def test_dpp_auto_connect_legacy_sae_2(dev, apdev):
     finally:
         dev[0].set("dpp_config_processing", "0", allow_fail=True)
 
+def test_dpp_auto_connect_legacy_sae_3(dev, apdev):
+    """DPP and auto connect (legacy SAE with short password)"""
+    try:
+        run_dpp_auto_connect_legacy(dev, apdev, conf='sta-sae', sae_only=True,
+                                    password="1234567")
+    finally:
+        dev[0].set("dpp_config_processing", "0", allow_fail=True)
+
+def test_dpp_auto_connect_legacy_sae_pw_id(dev, apdev):
+    """DPP and auto connect (legacy SAE with password identifier)"""
+    check_dpp_capab(dev[0], min_ver=3)
+    try:
+        run_dpp_auto_connect_legacy(dev, apdev, conf='sta-sae', sae_only=True,
+                                    password_id="id")
+    finally:
+        dev[0].set("dpp_config_processing", "0", allow_fail=True)
+
 def test_dpp_auto_connect_legacy_psk_sae_1(dev, apdev):
     """DPP and auto connect (legacy PSK+SAE)"""
     try:
@@ -2339,16 +2356,22 @@ def test_dpp_auto_connect_legacy_psk_sae_3(dev, apdev):
 
 def run_dpp_auto_connect_legacy(dev, apdev, conf='sta-psk',
                                 ssid_charset=None,
-                                psk_sae=False, sae_only=False):
+                                psk_sae=False, sae_only=False,
+                                password="secret passphrase",
+                                password_id=None):
     check_dpp_capab(dev[0])
     check_dpp_capab(dev[1])
 
-    params = hostapd.wpa2_params(ssid="dpp-legacy",
-                                 passphrase="secret passphrase")
-    if sae_only:
-            params['wpa_key_mgmt'] = 'SAE'
-            params['ieee80211w'] = '2'
-    elif psk_sae:
+    if sae_only and password_id:
+        params = hostapd.wpa3_params(ssid="dpp-legacy",
+                                     password=password + '|id=' + password_id)
+    elif sae_only:
+        params = hostapd.wpa3_params(ssid="dpp-legacy",
+                                     password=password)
+    else:
+        params = hostapd.wpa2_params(ssid="dpp-legacy",
+                                     passphrase=password)
+    if psk_sae:
             params['wpa_key_mgmt'] = 'WPA-PSK SAE'
             params['ieee80211w'] = '1'
             params['sae_require_mfp'] = '1'
@@ -2363,7 +2386,7 @@ def run_dpp_auto_connect_legacy(dev, apdev, conf='sta-psk',
     dev[0].dpp_listen(2412)
     dev[1].dpp_auth_init(uri=uri0, conf=conf, ssid="dpp-legacy",
                          ssid_charset=ssid_charset,
-                         passphrase="secret passphrase")
+                         passphrase=password, password_id=password_id)
     wait_auth_success(dev[0], dev[1], configurator=dev[1], enrollee=dev[0])
     if ssid_charset:
         ev = dev[0].wait_event(["DPP-CONFOBJ-SSID-CHARSET"], timeout=1)
@@ -2407,6 +2430,34 @@ def run_dpp_auto_connect_legacy_pmf_required(dev, apdev):
     if ev is None:
         raise Exception("DPP network profile not generated")
     dev[0].wait_connected()
+
+def test_dpp_hidden_ssid(dev, apdev):
+    """DPP provisioning and connect to hidden SSID"""
+    check_dpp_capab(dev[0])
+    check_dpp_capab(dev[1])
+
+    params = hostapd.wpa2_params(ssid="dpp-hidden",
+                                 passphrase="secret passphrase")
+    params["ignore_broadcast_ssid"] = "1"
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    id0 = dev[0].dpp_bootstrap_gen(chan="81/1", mac=True)
+    uri0 = dev[0].request("DPP_BOOTSTRAP_GET_URI %d" % id0)
+    dev[0].set("dpp_config_processing", "2")
+    dev[0].dpp_listen(2412)
+    dev[1].dpp_auth_init(uri=uri0, conf="sta-psk", ssid="dpp-hidden",
+                         passphrase="secret passphrase")
+    wait_auth_success(dev[0], dev[1], configurator=dev[1], enrollee=dev[0])
+    ev = dev[0].wait_event(["DPP-NETWORK-ID"], timeout=1)
+    if ev is None:
+        raise Exception("DPP network profile not generated")
+    dev[0].wait_connected()
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+    dev[0].set("dpp_config_processing", "0")
+    hapd.disable()
+    dev[0].flush_scan_cache(freq=2432)
+    dev[0].flush_scan_cache()
 
 def test_dpp_qr_code_auth_responder_configurator(dev, apdev):
     """DPP QR Code and responder as the configurator"""
@@ -3219,9 +3270,13 @@ def test_dpp_hostapd_enrollee_gas_timeout_comeback(dev, apdev):
     if "result=TIMEOUT" not in ev:
         raise Exception("GAS timeout not reported")
 
-def process_dpp_frames(dev, count=3):
+def process_dpp_frames(dev, count=3, only_dpp_action=False):
     for i in range(count):
         msg = dev.mgmt_rx()
+        payload = msg['payload']
+        categ, action = struct.unpack('BB', payload[0:2])
+        if only_dpp_action and (categ != 4 or action != 9):
+            raise Exception("Unexpected Action frame: categ=%d action=%d" % (categ, action))
         cmd = "MGMT_RX_PROCESS freq={} datarate={} ssi_signal={} frame={}".format(msg['freq'], msg['datarate'], msg['ssi_signal'], binascii.hexlify(msg['frame']).decode())
         if "OK" not in dev.request(cmd):
             raise Exception("MGMT_RX_PROCESS failed")
@@ -3296,7 +3351,9 @@ def test_dpp_hostapd_enrollee_gas_proto(dev, apdev):
     process_dpp_frames(dev[0], count=3)
     msg = dev[0].mgmt_rx()
     payload = msg['payload']
-    dialog_token, = struct.unpack('B', payload[2:3])
+    categ, action, dialog_token = struct.unpack('BBB', payload[0:3])
+    if categ != 4 or action != 12:
+        raise Exception("Unexpected Action frame: categ=%d action=%d" % (categ, action))
     hdr = struct.pack('<BBBHBH', 4, 13, dialog_token, 0, 0x80, 0)
     # GAS: Advertisement Protocol changed between initial and comeback response from 02:00:00:00:00:00
     adv_proto = "6c087fdd05506f9a1a02"
@@ -3315,7 +3372,9 @@ def test_dpp_hostapd_enrollee_gas_proto(dev, apdev):
     process_dpp_frames(dev[0], count=3)
     msg = dev[0].mgmt_rx()
     payload = msg['payload']
-    dialog_token, = struct.unpack('B', payload[2:3])
+    categ, action, dialog_token = struct.unpack('BBB', payload[0:3])
+    if categ != 4 or action != 12:
+        raise Exception("Unexpected Action frame: categ=%d action=%d" % (categ, action))
     # Another comeback delay
     hdr = struct.pack('<BBBHBH', 4, 13, dialog_token, 0, 0x80, 1)
     adv_proto = "6c087fdd05506f9a1a01"
@@ -3340,7 +3399,9 @@ def test_dpp_hostapd_enrollee_gas_proto(dev, apdev):
     process_dpp_frames(dev[0], count=3)
     msg = dev[0].mgmt_rx()
     payload = msg['payload']
-    dialog_token, = struct.unpack('B', payload[2:3])
+    categ, action, dialog_token = struct.unpack('BBB', payload[0:3])
+    if categ != 4 or action != 12:
+        raise Exception("Unexpected Action frame: categ=%d action=%d" % (categ, action))
     # Valid comeback response
     hdr = struct.pack('<BBBHBH', 4, 13, dialog_token, 0, 0x80, 0)
     action = binascii.hexlify(hdr).decode() + adv_proto + "0300" + "001001"
@@ -3369,7 +3430,9 @@ def test_dpp_hostapd_enrollee_gas_proto(dev, apdev):
     process_dpp_frames(dev[0], count=3)
     msg = dev[0].mgmt_rx()
     payload = msg['payload']
-    dialog_token, = struct.unpack('B', payload[2:3])
+    categ, action, dialog_token = struct.unpack('BBB', payload[0:3])
+    if categ != 4 or action != 12:
+        raise Exception("Unexpected Action frame: categ=%d action=%d" % (categ, action))
     # GAS: Unexpected initial response from 02:00:00:00:00:00 dialog token 3 when waiting for comeback response
     hdr = struct.pack('<BBBHBH', 4, 11, dialog_token, 0, 0x80, 0)
     action = binascii.hexlify(hdr).decode() + adv_proto + "0300" + "001001"
@@ -3427,15 +3490,18 @@ def test_dpp_hostapd_enrollee_gas_proto(dev, apdev):
     if not ev or "result=FAILURE" not in ev:
         raise Exception("Unexpect GAS query result: " + str(ev))
     dev[0].request("DPP_STOP_LISTEN")
+    time.sleep(1)
     hapd.dump_monitor()
     dev[0].dump_monitor()
 
     dev[0].dpp_listen(2437, role="configurator")
     hapd.dpp_auth_init(uri=uri0, role="enrollee")
-    process_dpp_frames(dev[0], count=2)
+    process_dpp_frames(dev[0], count=2, only_dpp_action=True)
     msg = dev[0].mgmt_rx()
     payload = msg['payload']
-    dialog_token, = struct.unpack('B', payload[2:3])
+    categ, action, dialog_token = struct.unpack('BBB', payload[0:3])
+    if categ != 4 or action != 10:
+        raise Exception("Unexpected Action frame: categ=%d action=%d" % (categ, action))
     # Unexpected comeback delay
     hdr = struct.pack('<BBBHBH', 4, 13, dialog_token, 0, 0x80, 0)
     adv_proto = "6c087fdd05506f9a1a01"
@@ -7399,14 +7465,29 @@ def dpp_sign_cert(cacert, cakey, csr_der):
 
 def test_dpp_enterprise(dev, apdev, params):
     """DPP and enterprise EAP-TLS provisioning"""
+    dpp_enterprise(dev, apdev, params, 0)
+
+def test_dpp_enterprise_1400ms(dev, apdev, params):
+    """DPP and enterprise EAP-TLS provisioning (1400 ms CA delay)"""
+    dpp_enterprise(dev, apdev, params, 1.4)
+
+def test_dpp_enterprise_2400ms(dev, apdev, params):
+    """DPP and enterprise EAP-TLS provisioning (2400 ms CA delay)"""
+    dpp_enterprise(dev, apdev, params, 2.4)
+
+def test_dpp_enterprise_5000ms(dev, apdev, params):
+    """DPP and enterprise EAP-TLS provisioning (5000 ms CA delay)"""
+    dpp_enterprise(dev, apdev, params, 5)
+
+def dpp_enterprise(dev, apdev, params, ca_delay):
     check_dpp_capab(dev[0], min_ver=2)
     try:
         dev[0].set("dpp_config_processing", "2")
-        run_dpp_enterprise(dev, apdev, params)
+        run_dpp_enterprise(dev, apdev, params, ca_delay=ca_delay)
     finally:
         dev[0].set("dpp_config_processing", "0", allow_fail=True)
 
-def run_dpp_enterprise(dev, apdev, params):
+def run_dpp_enterprise(dev, apdev, params, ca_delay=0):
     if not openssl_imported:
         raise HwsimSkip("OpenSSL python method not available")
     check_dpp_capab(dev[0])
@@ -7456,6 +7537,10 @@ def run_dpp_enterprise(dev, apdev, params):
     csr = csr[4:]
     csr = base64.b64decode(csr.encode())
     logger.info("CSR: " + binascii.hexlify(csr).decode())
+
+    if ca_delay:
+        logger.info("Wait for %d s before signing" % ca_delay)
+        time.sleep(ca_delay)
 
     cert = dpp_sign_cert(cacert, cakey, csr)
     with open(cert_file, 'wb') as f:
@@ -7860,3 +7945,39 @@ def test_dpp_discard_public_action(dev, apdev):
         raise Exception("Failure not reported")
     if "No Auth Confirm received" not in ev:
         raise Exception("Unexpected failure reason: " + ev)
+
+def test_dpp_proto_stop_after_auth_hostapd(dev, apdev):
+    """DPP protocol testing - stop after authentication exchange - hostapd Configurator behavior"""
+    check_dpp_capab(dev[0])
+
+    params = {"ssid": "dpp",
+              "wpa": "2",
+              "wpa_key_mgmt": "DPP",
+              "ieee80211w": "2",
+              "rsn_pairwise": "CCMP",
+              "dpp_connector": params1_ap_connector,
+              "dpp_csign": params1_csign,
+              "dpp_netaccesskey": params1_ap_netaccesskey}
+    try:
+        hapd = hostapd.add_ap(apdev[0], params)
+    except:
+        raise HwsimSkip("DPP not supported")
+
+    conf_id = hapd.dpp_configurator_add()
+    hapd.set("dpp_configurator_params",
+             " conf=sta-dpp configurator=%d" % conf_id)
+
+    dev[0].set("dpp_test", "89")
+    id0 = dev[0].dpp_bootstrap_gen(chan="81/1", mac=True)
+    uri0 = dev[0].request("DPP_BOOTSTRAP_GET_URI %d" % id0)
+    dev[0].dpp_listen(2412)
+
+    hapd.dpp_auth_init(uri=uri0, role="configurator", configurator=conf_id,
+                       conf="sta-dpp")
+    ev = hapd.wait_event(["DPP-AUTH-SUCCESS"], timeout=10)
+    if ev is None:
+        raise Exception("DPP authentication did not succeed")
+
+    ev = hapd.wait_event(["DPP-CONF-FAILED"], timeout=11)
+    if ev is None:
+        raise Exception("DPP config failure not reported")

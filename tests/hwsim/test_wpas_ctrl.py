@@ -74,14 +74,14 @@ def test_wpas_ctrl_network(dev):
              ("freq_list", "2412 2417"),
              ("scan_ssid", "1"),
              ("bssid", "00:11:22:33:44:55"),
-             ("proto", "WPA RSN OSEN"),
+             ("proto", "WPA RSN"),
              ("eap", "TLS"),
              ("go_p2p_dev_addr", "22:33:44:55:66:aa"),
              ("p2p_client_list", "22:33:44:55:66:bb 02:11:22:33:44:55")]
     if "SAE" not in dev[0].get_capability("auth_alg"):
-        tests.append(("key_mgmt", "WPS OSEN"))
+        tests.append(("key_mgmt", "WPS"))
     else:
-        tests.append(("key_mgmt", "WPS SAE FT-SAE OSEN"))
+        tests.append(("key_mgmt", "WPS SAE FT-SAE"))
 
     dev[0].set_network_quoted(id, "ssid", "test")
     for field, value in tests:
@@ -2191,3 +2191,45 @@ def test_wpas_ctrl_interface_add_driver_init_failure(dev, apdev):
         if "FAIL" not in res:
             raise Exception("Unexpected result: " + res)
     dev[0].dump_monitor()
+
+def test_wpas_ctrl_global_freq_list(dev):
+    """wpa_supplicant global freq_list parameter"""
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5")
+    freqs = "2412 2437 2462"
+    wpas.set("freq_list", freqs)
+    vals = wpas.get_config()
+    if 'freq_list' not in vals or vals['freq_list'] != freqs:
+        raise Exception("freq_list not reported correctly in DUMP")
+    val = wpas.request("GET freq_list")
+    if val != freqs:
+        raise Exception("freq_list not reported correctly in GET")
+
+    wpas.set("freq_list", "")
+    vals = wpas.get_config()
+    if 'freq_list' not in vals or vals['freq_list'] != "null":
+        raise Exception("freq_list not reported correctly in DUMP (2)")
+    val = wpas.request("GET freq_list")
+    if not val.startswith("FAIL"):
+        raise Exception("freq_list not reported correctly in GET (2)")
+
+def test_wpas_ctrl_global_bgscan(dev):
+    """wpa_supplicant global bgscan parameter"""
+    wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+    wpas.interface_add("wlan5")
+    bgscan = '"simple:1:-20:2"'
+    wpas.set("bgscan", bgscan)
+    vals = wpas.get_config()
+    if 'bgscan' not in vals or vals['bgscan'] != bgscan:
+        raise Exception("bgscan not reported correctly in DUMP")
+    val = wpas.request("GET bgscan")
+    if val != bgscan:
+        raise Exception("bgscan not reported correctly in GET")
+
+    wpas.set("bgscan", '""')
+    vals = wpas.get_config()
+    if 'bgscan' not in vals or vals['bgscan'] != '""':
+        raise Exception("bgscan not reported correctly in DUMP (2)")
+    val = wpas.request("GET bgscan")
+    if val != '""':
+        raise Exception("bgscan not reported correctly in GET (2)")
